@@ -12,12 +12,12 @@ func GenerateCredentialID(length int) (string, error) {
 	if length <= 0 {
 		return "", fmt.Errorf("length must be positive")
 	}
-	
+
 	bytes := make([]byte, length)
 	if _, err := rand.Read(bytes); err != nil {
 		return "", fmt.Errorf("failed to generate random bytes: %w", err)
 	}
-	
+
 	return base64.RawURLEncoding.EncodeToString(bytes), nil
 }
 

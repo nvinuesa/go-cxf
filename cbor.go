@@ -19,18 +19,18 @@ func init() {
 		Time:    cbor.TimeRFC3339,
 		TimeTag: cbor.EncTagRequired,
 	}
-	
+
 	var err error
 	cborEncMode, err = encOpts.EncMode()
 	if err != nil {
 		panic(fmt.Sprintf("failed to create CBOR encoding mode: %v", err))
 	}
-	
+
 	// Create decoding mode with RFC3339 time format
 	decOpts := cbor.DecOptions{
 		TimeTag: cbor.DecTagRequired,
 	}
-	
+
 	cborDecMode, err = decOpts.DecMode()
 	if err != nil {
 		panic(fmt.Sprintf("failed to create CBOR decoding mode: %v", err))
@@ -48,7 +48,7 @@ func UnmarshalContainerCBOR(data []byte) (*Container, error) {
 	if err := cborDecMode.Unmarshal(data, &container); err != nil {
 		return nil, fmt.Errorf("failed to unmarshal CBOR: %w", err)
 	}
-	
+
 	return &container, nil
 }
 
@@ -63,7 +63,7 @@ func UnmarshalCredentialCBOR(data []byte) (*Credential, error) {
 	if err := cborDecMode.Unmarshal(data, &credential); err != nil {
 		return nil, fmt.Errorf("failed to unmarshal CBOR: %w", err)
 	}
-	
+
 	return &credential, nil
 }
 
