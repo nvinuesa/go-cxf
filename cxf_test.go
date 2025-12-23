@@ -354,3 +354,41 @@ func TestValidateCredentialPasskeyFido2LargeBlobSizeMismatch(t *testing.T) {
 		t.Fatalf("expected ErrInvalidCredential for largeBlob size mismatch, got %v", err)
 	}
 }
+
+func TestValidateCredentialAPIKeyValid(t *testing.T) {
+	raw := json.RawMessage(`{"type":"api-key","key":{"fieldType":"concealed-string","value":"\"secret-key\""}}`)
+	if err := ValidateCredential(raw); err != nil {
+		t.Fatalf("expected valid api-key credential, got %v", err)
+	}
+}
+
+func TestValidateCredentialAddressValid(t *testing.T) {
+	raw := json.RawMessage(`{
+		"type":"address",
+		"streetAddress":{"fieldType":"string","value":"\"123 Main St\""},
+		"country":{"fieldType":"country-code","value":"\"US\""}
+	}`)
+	if err := ValidateCredential(raw); err != nil {
+		t.Fatalf("expected valid address credential, got %v", err)
+	}
+}
+
+func TestValidateCredentialGeneratedPasswordValid(t *testing.T) {
+	raw := json.RawMessage(`{
+		"type":"generated-password",
+		"password":"p@ssw0rd!"
+	}`)
+	if err := ValidateCredential(raw); err != nil {
+		t.Fatalf("expected valid generated-password credential, got %v", err)
+	}
+}
+
+func TestValidateCredentialGeneratedPasswordMissingPassword(t *testing.T) {
+	raw := json.RawMessage(`{
+		"type":"generated-password",
+		"password":""
+	}`)
+	if err := ValidateCredential(raw); err != ErrMissingFields {
+		t.Fatalf("expected ErrMissingFields for missing password, got %v", err)
+	}
+}

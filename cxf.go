@@ -202,13 +202,50 @@ func ValidateEditableFields(fields []EditableField) error {
 
 // Credential type constants.
 const (
-	CredentialTypeBasicAuth  = "basic-auth"
-	CredentialTypeTOTP       = "totp"
-	CredentialTypePasskey    = "passkey"
-	CredentialTypeFile       = "file"
-	CredentialTypeCreditCard = "credit-card"
-	CredentialTypeNote       = "note"
+	CredentialTypeBasicAuth         = "basic-auth"
+	CredentialTypeTOTP              = "totp"
+	CredentialTypePasskey           = "passkey"
+	CredentialTypeFile              = "file"
+	CredentialTypeCreditCard        = "credit-card"
+	CredentialTypeNote              = "note"
+	CredentialTypeAPIKey            = "api-key"
+	CredentialTypeAddress           = "address"
+	CredentialTypeGeneratedPassword = "generated-password"
 )
+
+type APIKeyCredential struct {
+	Type       string         `json:"type"`
+	Key        *EditableField `json:"key,omitempty"`
+	Username   *EditableField `json:"username,omitempty"`
+	KeyType    *EditableField `json:"keyType,omitempty"`
+	URL        *EditableField `json:"url,omitempty"`
+	ValidFrom  *EditableField `json:"validFrom,omitempty"`
+	ExpiryDate *EditableField `json:"expiryDate,omitempty"`
+}
+
+type AddressCredential struct {
+	Type          string         `json:"type"`
+	StreetAddress *EditableField `json:"streetAddress,omitempty"`
+	PostalCode    *EditableField `json:"postalCode,omitempty"`
+	City          *EditableField `json:"city,omitempty"`
+	Territory     *EditableField `json:"territory,omitempty"`
+	Country       *EditableField `json:"country,omitempty"`
+	Tel           *EditableField `json:"tel,omitempty"`
+}
+
+type PasswordRecipe struct {
+	Length         int  `json:"length"`
+	Uppercase      bool `json:"uppercase,omitempty"`
+	Lowercase      bool `json:"lowercase,omitempty"`
+	Numbers        bool `json:"numbers,omitempty"`
+	Symbols        bool `json:"symbols,omitempty"`
+	AvoidAmbiguous bool `json:"avoidAmbiguous,omitempty"`
+}
+
+type GeneratedPasswordCredential struct {
+	Type     string `json:"type"`
+	Password string `json:"password"`
+}
 
 // BasicAuth credential schema.
 type BasicAuthCredential struct {
@@ -327,6 +364,56 @@ func ValidateBasicAuthCredential(c BasicAuthCredential) error {
 	}
 	if err := ValidateEditableField(c.Password); err != nil {
 		return err
+	}
+	return nil
+}
+
+func ValidateAPIKeyCredential(c APIKeyCredential) error {
+	if c.Type != CredentialTypeAPIKey {
+		return ErrInvalidCredentialType
+	}
+	fields := []*EditableField{c.Key, c.Username, c.KeyType, c.URL, c.ValidFrom, c.ExpiryDate}
+	present := false
+	for _, f := range fields {
+		if f != nil {
+			present = true
+			if err := ValidateEditableField(*f); err != nil {
+				return err
+			}
+		}
+	}
+	if !present {
+		return ErrMissingFields
+	}
+	return nil
+}
+
+func ValidateAddressCredential(c AddressCredential) error {
+	if c.Type != CredentialTypeAddress {
+		return ErrInvalidCredentialType
+	}
+	fields := []*EditableField{c.StreetAddress, c.PostalCode, c.City, c.Territory, c.Country, c.Tel}
+	present := false
+	for _, f := range fields {
+		if f != nil {
+			present = true
+			if err := ValidateEditableField(*f); err != nil {
+				return err
+			}
+		}
+	}
+	if !present {
+		return ErrMissingFields
+	}
+	return nil
+}
+
+func ValidateGeneratedPasswordCredential(c GeneratedPasswordCredential) error {
+	if c.Type != CredentialTypeGeneratedPassword {
+		return ErrInvalidCredentialType
+	}
+	if c.Password == "" {
+		return ErrMissingFields
 	}
 	return nil
 }
@@ -573,6 +660,24 @@ func ValidateCredential(raw json.RawMessage) error {
 			return ErrInvalidCredential
 		}
 		return ValidateBasicAuthCredential(c)
+	case CredentialTypeAPIKey:
+		var c APIKeyCredential
+		if err := json.Unmarshal(raw, &c); err != nil {
+			return ErrInvalidCredential
+		}
+		return ValidateAPIKeyCredential(c)
+	case CredentialTypeAddress:
+		var c AddressCredential
+		if err := json.Unmarshal(raw, &c); err != nil {
+			return ErrInvalidCredential
+		}
+		return ValidateAddressCredential(c)
+	case CredentialTypeGeneratedPassword:
+		var c GeneratedPasswordCredential
+		if err := json.Unmarshal(raw, &c); err != nil {
+			return ErrInvalidCredential
+		}
+		return ValidateGeneratedPasswordCredential(c)
 	case CredentialTypeTOTP:
 		var c TOTPCredential
 		if err := json.Unmarshal(raw, &c); err != nil {
