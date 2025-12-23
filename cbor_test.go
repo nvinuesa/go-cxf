@@ -8,7 +8,7 @@ import (
 )
 
 func makeMinimalHeaderCBOR() *Header {
-	cred := json.RawMessage(`{"type":"note"}`)
+	cred := json.RawMessage(`{"type":"totp","secret":"JBSWY3DPEHPK3PXP","algorithm":"SHA1","period":30,"digits":6}`)
 	item := Item{
 		ID:          "aXRlbS0x", // base64url("item-1")
 		Title:       "Item",

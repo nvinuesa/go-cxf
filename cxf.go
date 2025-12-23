@@ -2,6 +2,8 @@ package cxf
 
 import (
 	"bytes"
+	"crypto/sha256"
+	"crypto/x509"
 	"encoding/json"
 	"errors"
 )
@@ -15,14 +17,16 @@ const (
 
 // Common validation errors.
 var (
-	ErrInvalidVersion    = errors.New("invalid CXF version")
-	ErrInvalidFormat     = errors.New("invalid CXF format")
-	ErrMissingAccount    = errors.New("missing account")
-	ErrMissingItem       = errors.New("missing item")
-	ErrMissingFields     = errors.New("missing required fields")
-	ErrInvalidIDLength   = errors.New("identifier exceeds 64 bytes")
-	ErrInvalidFieldType  = errors.New("invalid editable field type")
-	ErrInvalidFieldValue = errors.New("invalid editable field value for type")
+	ErrInvalidVersion        = errors.New("invalid CXF version")
+	ErrInvalidFormat         = errors.New("invalid CXF format")
+	ErrMissingAccount        = errors.New("missing account")
+	ErrMissingItem           = errors.New("missing item")
+	ErrMissingFields         = errors.New("missing required fields")
+	ErrInvalidIDLength       = errors.New("identifier exceeds 64 bytes")
+	ErrInvalidFieldType      = errors.New("invalid editable field type")
+	ErrInvalidFieldValue     = errors.New("invalid editable field value for type")
+	ErrInvalidCredential     = errors.New("invalid credential")
+	ErrInvalidCredentialType = errors.New("invalid credential type")
 )
 
 // Version encodes the CXF version information.
@@ -196,6 +200,162 @@ func ValidateEditableFields(fields []EditableField) error {
 	return nil
 }
 
+// Credential type constants.
+const (
+	CredentialTypeTOTP    = "totp"
+	CredentialTypePasskey = "passkey"
+	CredentialTypeFile    = "file"
+)
+
+// TOTP credential schema.
+type TOTPCredential struct {
+	Type        string `json:"type"`
+	Secret      string `json:"secret"`
+	Algorithm   string `json:"algorithm"`
+	Period      int    `json:"period"`
+	Digits      int    `json:"digits"`
+	Issuer      string `json:"issuer,omitempty"`
+	AccountName string `json:"accountName,omitempty"`
+}
+
+var totpAllowedAlgorithms = map[string]struct{}{
+	"SHA1":   {},
+	"SHA256": {},
+	"SHA512": {},
+}
+
+var totpAllowedDigits = map[int]struct{}{
+	6: {}, 7: {}, 8: {},
+}
+
+func ValidateTOTPCredential(c TOTPCredential) error {
+	if c.Type != CredentialTypeTOTP {
+		return ErrInvalidCredentialType
+	}
+	if c.Secret == "" || c.Algorithm == "" || c.Period <= 0 || c.Digits <= 0 {
+		return ErrMissingFields
+	}
+	if _, ok := totpAllowedAlgorithms[c.Algorithm]; !ok {
+		return ErrInvalidCredential
+	}
+	if _, ok := totpAllowedDigits[c.Digits]; !ok {
+		return ErrInvalidCredential
+	}
+	if err := ValidateBase32(c.Secret); err != nil {
+		return ErrInvalidCredential
+	}
+	return nil
+}
+
+// Passkey credential schema.
+type PasskeyCredential struct {
+	Type         string `json:"type"`
+	CredentialID string `json:"credentialId"`
+	PrivateKey   string `json:"privateKey"`
+	PublicKey    string `json:"publicKey,omitempty"`
+	SignCount    uint32 `json:"signCount,omitempty"`
+}
+
+func ValidatePasskeyCredential(c PasskeyCredential) error {
+	if c.Type != CredentialTypePasskey {
+		return ErrInvalidCredentialType
+	}
+	if c.CredentialID == "" || c.PrivateKey == "" {
+		return ErrMissingFields
+	}
+	if err := ValidateIdentifier(c.CredentialID); err != nil {
+		return err
+	}
+	privDER, err := DecodeBase64URL(c.PrivateKey)
+	if err != nil {
+		return ErrInvalidCredential
+	}
+	if _, err := x509.ParsePKCS8PrivateKey(privDER); err != nil {
+		return ErrInvalidCredential
+	}
+	if c.SignCount != 0 {
+		return ErrInvalidCredential
+	}
+	if c.PublicKey != "" {
+		if _, err := DecodeBase64URL(c.PublicKey); err != nil {
+			return ErrInvalidCredential
+		}
+	}
+	return nil
+}
+
+// File credential schema.
+type FileCredential struct {
+	Type          string `json:"type"`
+	Name          string `json:"name"`
+	MimeType      string `json:"mimeType"`
+	Data          string `json:"data"`
+	IntegrityHash string `json:"integrityHash"`
+}
+
+func ValidateFileCredential(c FileCredential) error {
+	if c.Type != CredentialTypeFile {
+		return ErrInvalidCredentialType
+	}
+	if c.Name == "" || c.MimeType == "" || c.Data == "" || c.IntegrityHash == "" {
+		return ErrMissingFields
+	}
+	dataBytes, err := DecodeBase64URL(c.Data)
+	if err != nil {
+		return ErrInvalidCredential
+	}
+	hash := sha256.Sum256(dataBytes)
+	expected := EncodeBase64URL(hash[:])
+	if expected != c.IntegrityHash {
+		return ErrInvalidCredential
+	}
+	return nil
+}
+
+type credentialEnvelope struct {
+	Type string `json:"type"`
+}
+
+// ValidateCredential dispatches credential validation based on type.
+func ValidateCredential(raw json.RawMessage) error {
+	var env credentialEnvelope
+	if err := json.Unmarshal(raw, &env); err != nil {
+		return ErrInvalidCredential
+	}
+	switch env.Type {
+	case CredentialTypeTOTP:
+		var c TOTPCredential
+		if err := json.Unmarshal(raw, &c); err != nil {
+			return ErrInvalidCredential
+		}
+		return ValidateTOTPCredential(c)
+	case CredentialTypePasskey:
+		var c PasskeyCredential
+		if err := json.Unmarshal(raw, &c); err != nil {
+			return ErrInvalidCredential
+		}
+		return ValidatePasskeyCredential(c)
+	case CredentialTypeFile:
+		var c FileCredential
+		if err := json.Unmarshal(raw, &c); err != nil {
+			return ErrInvalidCredential
+		}
+		return ValidateFileCredential(c)
+	default:
+		return ErrInvalidCredentialType
+	}
+}
+
+// ValidateCredentials iterates validation across a slice of credentials.
+func ValidateCredentials(creds []json.RawMessage) error {
+	for _, raw := range creds {
+		if err := ValidateCredential(raw); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 // Extension is a generic extension payload.
 type Extension struct {
 	Name string                 `json:"name"`
@@ -290,6 +450,9 @@ func (i *Item) Validate() error {
 	}
 	if len(i.Credentials) == 0 {
 		return ErrMissingFields
+	}
+	if err := ValidateCredentials(i.Credentials); err != nil {
+		return err
 	}
 	return nil
 }

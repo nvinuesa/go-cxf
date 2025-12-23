@@ -22,16 +22,16 @@ func main() {
 }
 
 func buildExampleHeader() *cxf.Header {
-	// Construct a minimal note credential as raw JSON (type discrimination will be added elsewhere)
-	noteCred := json.RawMessage(`{"type":"note","content":{"fieldType":"string","value":"hello world"}}`)
+	// Construct a minimal TOTP credential as raw JSON
+	totpCred := json.RawMessage(`{\"type\":\"totp\",\"secret\":\"JBSWY3DPEHPK3PXP\",\"algorithm\":\"SHA1\",\"period\":30,\"digits\":6}`)
 
 	now := uint64(time.Now().Unix())
 
 	item := cxf.Item{
 		ID:          "aXRlbS0x", // base64url("item-1")
 		Title:       "Sample Item",
-		Credentials: []json.RawMessage{noteCred},
-		Tags:        []string{"example", "note"},
+		Credentials: []json.RawMessage{totpCred},
+		Tags:        []string{"example", "totp"},
 	}
 
 	account := cxf.Account{

@@ -1,12 +1,18 @@
 package cxf
 
 import (
+	"crypto/ecdsa"
+	"crypto/elliptic"
+	"crypto/rand"
+	"crypto/sha256"
+	"crypto/x509"
 	"encoding/json"
+	"fmt"
 	"testing"
 )
 
 func makeMinimalHeader() *Header {
-	cred := json.RawMessage(`{"type":"note"}`)
+	cred := json.RawMessage(`{"type":"totp","secret":"JBSWY3DPEHPK3PXP","algorithm":"SHA1","period":30,"digits":6}`)
 	item := Item{
 		ID:          "aXRlbS0x", // base64url("item-1")
 		Title:       "Test Item",
@@ -111,7 +117,7 @@ func TestItemValidate(t *testing.T) {
 	if err := item.Validate(); err != ErrMissingFields {
 		t.Fatalf("expected ErrMissingFields for missing credentials, got %v", err)
 	}
-	item.Credentials = []json.RawMessage{json.RawMessage(`{"type":"note"}`)}
+	item.Credentials = []json.RawMessage{json.RawMessage(`{"type":"totp","secret":"JBSWY3DPEHPK3PXP","algorithm":"SHA1","period":30,"digits":6}`)}
 	if err := item.Validate(); err != nil {
 		t.Fatalf("expected valid item, got %v", err)
 	}
@@ -203,5 +209,81 @@ func TestValidateEditableFieldStringTypes(t *testing.T) {
 	f.Value = json.RawMessage("123") // not a JSON string, should fail
 	if err := ValidateEditableField(f); err != ErrInvalidFieldValue {
 		t.Fatalf("expected ErrInvalidFieldValue for non-string value, got %v", err)
+	}
+}
+
+func TestValidateCredentialTOTPValid(t *testing.T) {
+	raw := json.RawMessage(`{"type":"totp","secret":"JBSWY3DPEHPK3PXP","algorithm":"SHA1","period":30,"digits":6}`)
+	if err := ValidateCredential(raw); err != nil {
+		t.Fatalf("expected valid TOTP credential, got %v", err)
+	}
+}
+
+func TestValidateCredentialTOTPInvalid(t *testing.T) {
+	raw := json.RawMessage(`{"type":"totp","secret":"!!!","algorithm":"SHA1","period":30,"digits":6}`)
+	if err := ValidateCredential(raw); err != ErrInvalidCredential {
+		t.Fatalf("expected ErrInvalidCredential for invalid secret, got %v", err)
+	}
+}
+
+func TestValidateCredentialPasskeyValid(t *testing.T) {
+	privKey, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	if err != nil {
+		t.Fatalf("failed to generate key: %v", err)
+	}
+	der, err := x509.MarshalPKCS8PrivateKey(privKey)
+	if err != nil {
+		t.Fatalf("failed to marshal pkcs8: %v", err)
+	}
+	priv := EncodeBase64URL(der)
+	credID, err := GenerateIdentifier(16)
+	if err != nil {
+		t.Fatalf("failed to generate credential id: %v", err)
+	}
+
+	raw := json.RawMessage(fmt.Sprintf(`{"type":"passkey","credentialId":"%s","privateKey":"%s","signCount":0}`, credID, priv))
+	if err := ValidateCredential(raw); err != nil {
+		t.Fatalf("expected valid passkey credential, got %v", err)
+	}
+}
+
+func TestValidateCredentialPasskeyInvalidSignCount(t *testing.T) {
+	privKey, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	if err != nil {
+		t.Fatalf("failed to generate key: %v", err)
+	}
+	der, err := x509.MarshalPKCS8PrivateKey(privKey)
+	if err != nil {
+		t.Fatalf("failed to marshal pkcs8: %v", err)
+	}
+	priv := EncodeBase64URL(der)
+	credID, err := GenerateIdentifier(16)
+	if err != nil {
+		t.Fatalf("failed to generate credential id: %v", err)
+	}
+
+	raw := json.RawMessage(fmt.Sprintf(`{"type":"passkey","credentialId":"%s","privateKey":"%s","signCount":1}`, credID, priv))
+	if err := ValidateCredential(raw); err != ErrInvalidCredential {
+		t.Fatalf("expected ErrInvalidCredential for non-zero signCount, got %v", err)
+	}
+}
+
+func TestValidateCredentialFileValid(t *testing.T) {
+	data := []byte("hello")
+	dataB64 := EncodeBase64URL(data)
+	hash := sha256.Sum256(data)
+	integrity := EncodeBase64URL(hash[:])
+	raw := json.RawMessage(fmt.Sprintf(`{"type":"file","name":"hello.txt","mimeType":"text/plain","data":"%s","integrityHash":"%s"}`, dataB64, integrity))
+	if err := ValidateCredential(raw); err != nil {
+		t.Fatalf("expected valid file credential, got %v", err)
+	}
+}
+
+func TestValidateCredentialFileInvalidHash(t *testing.T) {
+	data := []byte("hello")
+	dataB64 := EncodeBase64URL(data)
+	raw := json.RawMessage(fmt.Sprintf(`{"type":"file","name":"hello.txt","mimeType":"text/plain","data":"%s","integrityHash":"bogus"}`, dataB64))
+	if err := ValidateCredential(raw); err != ErrInvalidCredential {
+		t.Fatalf("expected ErrInvalidCredential for bad hash, got %v", err)
 	}
 }
