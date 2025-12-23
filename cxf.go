@@ -28,19 +28,19 @@ var (
 type Container struct {
 	// Version is the CXF specification version (must be "1.0")
 	Version string `json:"version"`
-	
+
 	// FormatVersion is the format version for this container
 	FormatVersion string `json:"formatVersion,omitempty"`
-	
+
 	// Type indicates the type of container (e.g., "credential", "credential-set")
 	Type string `json:"type"`
-	
+
 	// Created is the timestamp when this container was created
 	Created time.Time `json:"created"`
-	
+
 	// Credentials contains one or more credentials
 	Credentials []Credential `json:"credentials"`
-	
+
 	// Metadata contains additional container metadata
 	Metadata map[string]interface{} `json:"metadata,omitempty"`
 }
@@ -49,31 +49,31 @@ type Container struct {
 type Credential struct {
 	// ID is a unique identifier for this credential
 	ID string `json:"id"`
-	
+
 	// Type specifies the credential type (e.g., "public-key", "passkey")
 	Type CredentialType `json:"type"`
-	
+
 	// Created is when the credential was created
 	Created time.Time `json:"created"`
-	
+
 	// LastUsed is when the credential was last used
 	LastUsed *time.Time `json:"lastUsed,omitempty"`
-	
+
 	// RelyingParty contains information about the relying party
 	RelyingParty RelyingParty `json:"relyingParty"`
-	
+
 	// User contains information about the user
 	User UserInfo `json:"user"`
-	
+
 	// PublicKey contains the public key information
 	PublicKey *PublicKeyCredential `json:"publicKey,omitempty"`
-	
+
 	// PrivateKey contains the private key (if exported)
 	PrivateKey *PrivateKeyData `json:"privateKey,omitempty"`
-	
+
 	// Attestation contains attestation data
 	Attestation *AttestationData `json:"attestation,omitempty"`
-	
+
 	// Metadata contains additional credential metadata
 	Metadata map[string]interface{} `json:"metadata,omitempty"`
 }
@@ -84,10 +84,10 @@ type CredentialType string
 const (
 	// CredentialTypePublicKey represents a public key credential
 	CredentialTypePublicKey CredentialType = "public-key"
-	
+
 	// CredentialTypePasskey represents a passkey credential
 	CredentialTypePasskey CredentialType = "passkey"
-	
+
 	// CredentialTypeFIDO2 represents a FIDO2 credential
 	CredentialTypeFIDO2 CredentialType = "fido2"
 )
@@ -96,10 +96,10 @@ const (
 type RelyingParty struct {
 	// ID is the relying party identifier
 	ID string `json:"id"`
-	
+
 	// Name is the human-readable name of the relying party
 	Name string `json:"name"`
-	
+
 	// Icon is an optional URL to the relying party icon
 	Icon string `json:"icon,omitempty"`
 }
@@ -108,13 +108,13 @@ type RelyingParty struct {
 type UserInfo struct {
 	// ID is the user identifier (base64url encoded)
 	ID string `json:"id"`
-	
+
 	// Name is the user's account name
 	Name string `json:"name"`
-	
+
 	// DisplayName is the user's display name
 	DisplayName string `json:"displayName"`
-	
+
 	// Icon is an optional URL to the user's icon
 	Icon string `json:"icon,omitempty"`
 }
@@ -123,19 +123,19 @@ type UserInfo struct {
 type PublicKeyCredential struct {
 	// CredentialID is the credential identifier (base64url encoded)
 	CredentialID string `json:"credentialId"`
-	
+
 	// Algorithm is the COSE algorithm identifier
 	Algorithm int `json:"algorithm"`
-	
+
 	// PublicKey is the public key in COSE_Key format (base64url encoded)
 	PublicKey string `json:"publicKey"`
-	
+
 	// SignCount is the signature counter value
 	SignCount uint32 `json:"signCount"`
-	
+
 	// Transports indicates the supported transports
 	Transports []AuthenticatorTransport `json:"transports,omitempty"`
-	
+
 	// AAGUID is the authenticator AAGUID
 	AAGUID string `json:"aaguid,omitempty"`
 }
@@ -146,16 +146,16 @@ type AuthenticatorTransport string
 const (
 	// TransportUSB indicates USB transport
 	TransportUSB AuthenticatorTransport = "usb"
-	
+
 	// TransportNFC indicates NFC transport
 	TransportNFC AuthenticatorTransport = "nfc"
-	
+
 	// TransportBLE indicates Bluetooth Low Energy transport
 	TransportBLE AuthenticatorTransport = "ble"
-	
+
 	// TransportInternal indicates platform/internal transport
 	TransportInternal AuthenticatorTransport = "internal"
-	
+
 	// TransportHybrid indicates hybrid transport
 	TransportHybrid AuthenticatorTransport = "hybrid"
 )
@@ -164,13 +164,13 @@ const (
 type PrivateKeyData struct {
 	// KeyType specifies the type of private key
 	KeyType string `json:"keyType"`
-	
+
 	// PrivateKey is the private key data (base64url encoded)
 	PrivateKey string `json:"privateKey"`
-	
+
 	// Encrypted indicates if the private key is encrypted
 	Encrypted bool `json:"encrypted,omitempty"`
-	
+
 	// EncryptionMethod specifies the encryption method if encrypted
 	EncryptionMethod string `json:"encryptionMethod,omitempty"`
 }
@@ -179,13 +179,13 @@ type PrivateKeyData struct {
 type AttestationData struct {
 	// Format is the attestation statement format
 	Format AttestationFormat `json:"format"`
-	
+
 	// Statement is the attestation statement
 	Statement map[string]interface{} `json:"statement"`
-	
+
 	// ClientDataJSON is the client data JSON (base64url encoded)
 	ClientDataJSON string `json:"clientDataJSON,omitempty"`
-	
+
 	// AuthenticatorData is the authenticator data (base64url encoded)
 	AuthenticatorData string `json:"authenticatorData,omitempty"`
 }
@@ -196,22 +196,22 @@ type AttestationFormat string
 const (
 	// AttestationFormatPacked represents the packed attestation format
 	AttestationFormatPacked AttestationFormat = "packed"
-	
+
 	// AttestationFormatTPM represents the TPM attestation format
 	AttestationFormatTPM AttestationFormat = "tpm"
-	
+
 	// AttestationFormatAndroidKey represents the Android Key attestation format
 	AttestationFormatAndroidKey AttestationFormat = "android-key"
-	
+
 	// AttestationFormatAndroidSafetyNet represents the Android SafetyNet attestation format
 	AttestationFormatAndroidSafetyNet AttestationFormat = "android-safetynet"
-	
+
 	// AttestationFormatFIDOU2F represents the FIDO U2F attestation format
 	AttestationFormatFIDOU2F AttestationFormat = "fido-u2f"
-	
+
 	// AttestationFormatNone represents no attestation
 	AttestationFormatNone AttestationFormat = "none"
-	
+
 	// AttestationFormatApple represents the Apple attestation format
 	AttestationFormatApple AttestationFormat = "apple"
 )
@@ -237,21 +237,21 @@ func (c *Container) Validate() error {
 	if c.Version != Version {
 		return ErrInvalidVersion
 	}
-	
+
 	if c.Type == "" {
 		return ErrInvalidFormat
 	}
-	
+
 	if len(c.Credentials) == 0 {
 		return ErrMissingCredential
 	}
-	
+
 	for _, cred := range c.Credentials {
 		if err := cred.Validate(); err != nil {
 			return err
 		}
 	}
-	
+
 	return nil
 }
 
@@ -271,7 +271,7 @@ func Unmarshal(data []byte) (*Container, error) {
 	if err := json.Unmarshal(data, &container); err != nil {
 		return nil, err
 	}
-	
+
 	return &container, nil
 }
 
@@ -280,19 +280,19 @@ func (c *Credential) Validate() error {
 	if c.ID == "" {
 		return ErrInvalidFormat
 	}
-	
+
 	if c.Type == "" {
 		return ErrInvalidCredentialType
 	}
-	
+
 	if c.RelyingParty.ID == "" {
 		return ErrInvalidFormat
 	}
-	
+
 	if c.User.ID == "" {
 		return ErrInvalidFormat
 	}
-	
+
 	return nil
 }
 

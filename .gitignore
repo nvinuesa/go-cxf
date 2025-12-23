@@ -28,3 +28,7 @@ testdata/
 
 # SPEC
 spec/
+
+# Example binaries
+examples/*/basic
+examples/*/*
