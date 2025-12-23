@@ -1,11 +1,7 @@
 package cxf
 
 import (
-	"crypto/ecdsa"
-	"crypto/elliptic"
-	"crypto/rand"
 	"crypto/sha256"
-	"crypto/x509"
 	"encoding/json"
 	"fmt"
 	"testing"
@@ -227,44 +223,14 @@ func TestValidateCredentialTOTPInvalid(t *testing.T) {
 }
 
 func TestValidateCredentialPasskeyValid(t *testing.T) {
-	privKey, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
-	if err != nil {
-		t.Fatalf("failed to generate key: %v", err)
-	}
-	der, err := x509.MarshalPKCS8PrivateKey(privKey)
-	if err != nil {
-		t.Fatalf("failed to marshal pkcs8: %v", err)
-	}
-	priv := EncodeBase64URL(der)
 	credID, err := GenerateIdentifier(16)
 	if err != nil {
 		t.Fatalf("failed to generate credential id: %v", err)
 	}
-
-	raw := json.RawMessage(fmt.Sprintf(`{"type":"passkey","credentialId":"%s","privateKey":"%s","signCount":0}`, credID, priv))
+	keyObj := `{"kty":"OKP","crv":"Ed25519"}`
+	raw := json.RawMessage(fmt.Sprintf(`{"type":"passkey","credentialId":"%s","key":%s,"rpId":"example.com","userName":"user","userDisplayName":"User","userHandle":"dXNlcg","publicKey":"%s"}`, credID, keyObj, EncodeBase64URL([]byte("public"))))
 	if err := ValidateCredential(raw); err != nil {
-		t.Fatalf("expected valid passkey credential, got %v", err)
-	}
-}
-
-func TestValidateCredentialPasskeyInvalidSignCount(t *testing.T) {
-	privKey, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
-	if err != nil {
-		t.Fatalf("failed to generate key: %v", err)
-	}
-	der, err := x509.MarshalPKCS8PrivateKey(privKey)
-	if err != nil {
-		t.Fatalf("failed to marshal pkcs8: %v", err)
-	}
-	priv := EncodeBase64URL(der)
-	credID, err := GenerateIdentifier(16)
-	if err != nil {
-		t.Fatalf("failed to generate credential id: %v", err)
-	}
-
-	raw := json.RawMessage(fmt.Sprintf(`{"type":"passkey","credentialId":"%s","privateKey":"%s","signCount":1}`, credID, priv))
-	if err := ValidateCredential(raw); err != ErrInvalidCredential {
-		t.Fatalf("expected ErrInvalidCredential for non-zero signCount, got %v", err)
+		t.Fatalf("expected valid passkey credential with rpId/key, got %v", err)
 	}
 }
 
@@ -347,5 +313,44 @@ func TestValidateCredentialNoteMissingText(t *testing.T) {
 	raw := json.RawMessage(`{"type":"note","text":""}`)
 	if err := ValidateCredential(raw); err != ErrMissingFields {
 		t.Fatalf("expected ErrMissingFields for empty note text, got %v", err)
+	}
+}
+
+func TestValidateCredentialPasskeyKeyStringValid(t *testing.T) {
+	credID, err := GenerateIdentifier(16)
+	if err != nil {
+		t.Fatalf("failed to generate credential id: %v", err)
+	}
+	keyStr := EncodeBase64URL([]byte("keydata"))
+	raw := json.RawMessage(fmt.Sprintf(`{"type":"passkey","credentialId":"%s","key":"%s","rpId":"example.com","userName":"user","userDisplayName":"User","userHandle":"dXNlcg","publicKey":"%s"}`, credID, keyStr, EncodeBase64URL([]byte("public"))))
+	if err := ValidateCredential(raw); err != nil {
+		t.Fatalf("expected valid passkey credential with key string, got %v", err)
+	}
+}
+
+func TestValidateCredentialPasskeyFido2LargeBlobSizeMismatch(t *testing.T) {
+	credID, err := GenerateIdentifier(16)
+	if err != nil {
+		t.Fatalf("failed to generate credential id: %v", err)
+	}
+	keyObj := `{"kty":"OKP","crv":"Ed25519"}`
+	raw := json.RawMessage(fmt.Sprintf(`{
+		"type":"passkey",
+		"credentialId":"%s",
+		"key":%s,
+		"rpId":"example.com",
+		"userName":"user",
+		"userDisplayName":"User",
+		"userHandle":"dXNlcg",
+		"fido2Extensions":{
+			"largeBlob":{
+				"size":2,
+				"alg":"A256GCM",
+				"data":"%s"
+			}
+		}
+	}`, credID, keyObj, EncodeBase64URL([]byte("abc"))))
+	if err := ValidateCredential(raw); err != ErrInvalidCredential {
+		t.Fatalf("expected ErrInvalidCredential for largeBlob size mismatch, got %v", err)
 	}
 }

@@ -241,11 +241,41 @@ var totpAllowedDigits = map[int]struct{}{
 
 // Passkey credential schema.
 type PasskeyCredential struct {
-	Type         string `json:"type"`
-	CredentialID string `json:"credentialId"`
-	PrivateKey   string `json:"privateKey"`
-	PublicKey    string `json:"publicKey,omitempty"`
-	SignCount    uint32 `json:"signCount,omitempty"`
+	Type            string           `json:"type"`
+	CredentialID    string           `json:"credentialId"`
+	PrivateKey      string           `json:"privateKey,omitempty"`
+	Key             json.RawMessage  `json:"key,omitempty"`
+	RpId            string           `json:"rpId,omitempty"`
+	UserName        string           `json:"userName,omitempty"`
+	UserDisplayName string           `json:"userDisplayName,omitempty"`
+	UserHandle      string           `json:"userHandle,omitempty"`
+	PublicKey       string           `json:"publicKey,omitempty"`
+	SignCount       uint32           `json:"signCount,omitempty"`
+	Fido2Extensions *Fido2Extensions `json:"fido2Extensions,omitempty"`
+}
+
+type Fido2Extensions struct {
+	HmacSecret       *Fido2HmacSecret       `json:"hmacSecret,omitempty"`
+	CredBlob         string                 `json:"credBlob,omitempty"`
+	LargeBlob        *Fido2LargeBlob        `json:"largeBlob,omitempty"`
+	Payments         *bool                  `json:"payments,omitempty"`
+	SupplementalKeys *Fido2SupplementalKeys `json:"supplementalKeys,omitempty"`
+}
+
+type Fido2HmacSecret struct {
+	Algorithm string `json:"algorithm"`
+	Secret    string `json:"secret"`
+}
+
+type Fido2LargeBlob struct {
+	Size uint64 `json:"size"`
+	Alg  string `json:"alg"`
+	Data string `json:"data"`
+}
+
+type Fido2SupplementalKeys struct {
+	Device   *bool `json:"device,omitempty"`
+	Provider *bool `json:"provider,omitempty"`
 }
 
 // File credential schema.
@@ -324,27 +354,106 @@ func ValidatePasskeyCredential(c PasskeyCredential) error {
 	if c.Type != CredentialTypePasskey {
 		return ErrInvalidCredentialType
 	}
-	if c.CredentialID == "" || c.PrivateKey == "" {
+	if c.CredentialID == "" {
 		return ErrMissingFields
 	}
 	if err := ValidateIdentifier(c.CredentialID); err != nil {
 		return err
 	}
-	privDER, err := DecodeBase64URL(c.PrivateKey)
-	if err != nil {
-		return ErrInvalidCredential
+
+	hasPrivate := c.PrivateKey != ""
+	hasKey := len(c.Key) > 0
+
+	if !hasPrivate && !hasKey {
+		return ErrMissingFields
 	}
-	if _, err := x509.ParsePKCS8PrivateKey(privDER); err != nil {
-		return ErrInvalidCredential
+
+	if hasPrivate {
+		privDER, err := DecodeBase64URL(c.PrivateKey)
+		if err != nil {
+			return ErrInvalidCredential
+		}
+		if _, err := x509.ParsePKCS8PrivateKey(privDER); err != nil {
+			return ErrInvalidCredential
+		}
 	}
-	if c.SignCount != 0 {
-		return ErrInvalidCredential
+
+	if hasKey {
+		var v interface{}
+		if err := json.Unmarshal(c.Key, &v); err != nil {
+			return ErrInvalidCredential
+		}
+		switch val := v.(type) {
+		case string:
+			if val == "" {
+				return ErrInvalidCredential
+			}
+			if _, err := DecodeBase64URL(val); err != nil {
+				return ErrInvalidCredential
+			}
+		case map[string]interface{}:
+			if len(val) == 0 {
+				return ErrInvalidCredential
+			}
+		default:
+			return ErrInvalidCredential
+		}
 	}
+
 	if c.PublicKey != "" {
 		if _, err := DecodeBase64URL(c.PublicKey); err != nil {
 			return ErrInvalidCredential
 		}
 	}
+
+	extendedProvided := hasKey || c.RpId != "" || c.UserName != "" || c.UserDisplayName != "" || c.UserHandle != "" || c.Fido2Extensions != nil
+	if extendedProvided {
+		if c.RpId == "" || c.UserName == "" || c.UserDisplayName == "" || c.UserHandle == "" || !hasKey {
+			return ErrMissingFields
+		}
+		if c.Fido2Extensions != nil {
+			if err := validateFido2Extensions(c.Fido2Extensions); err != nil {
+				return err
+			}
+		}
+	}
+
+	return nil
+}
+
+func validateFido2Extensions(ext *Fido2Extensions) error {
+	if ext == nil {
+		return nil
+	}
+
+	if ext.HmacSecret != nil {
+		if ext.HmacSecret.Algorithm == "" || ext.HmacSecret.Secret == "" {
+			return ErrMissingFields
+		}
+		if err := ValidateBase64URL(ext.HmacSecret.Secret); err != nil {
+			return ErrInvalidCredential
+		}
+	}
+
+	if ext.CredBlob != "" {
+		if err := ValidateBase64URL(ext.CredBlob); err != nil {
+			return ErrInvalidCredential
+		}
+	}
+
+	if ext.LargeBlob != nil {
+		if ext.LargeBlob.Size == 0 || ext.LargeBlob.Alg == "" || ext.LargeBlob.Data == "" {
+			return ErrMissingFields
+		}
+		decoded, err := DecodeBase64URL(ext.LargeBlob.Data)
+		if err != nil {
+			return ErrInvalidCredential
+		}
+		if uint64(len(decoded)) != ext.LargeBlob.Size {
+			return ErrInvalidCredential
+		}
+	}
+
 	return nil
 }
 
