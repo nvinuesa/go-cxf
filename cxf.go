@@ -3,7 +3,6 @@ package cxf
 import (
 	"bytes"
 	"crypto/sha256"
-	"crypto/x509"
 	"encoding/json"
 	"errors"
 )
@@ -200,6 +199,17 @@ func ValidateEditableFields(fields []EditableField) error {
 	return nil
 }
 
+// ValidateEditableFieldWithExpectedType enforces both field validity and a specific expected fieldType.
+func ValidateEditableFieldWithExpectedType(f EditableField, expectedType string) error {
+	if err := ValidateEditableField(f); err != nil {
+		return err
+	}
+	if expectedType != "" && f.FieldType != expectedType {
+		return ErrInvalidFieldType
+	}
+	return nil
+}
+
 // Credential type constants.
 const (
 	CredentialTypeBasicAuth         = "basic-auth"
@@ -249,27 +259,26 @@ type GeneratedPasswordCredential struct {
 
 // BasicAuth credential schema.
 type BasicAuthCredential struct {
-	Type     string        `json:"type"`
-	Urls     []string      `json:"urls"`
-	Username EditableField `json:"username,omitempty"`
-	Password EditableField `json:"password,omitempty"`
+	Type     string         `json:"type"`
+	Username *EditableField `json:"username,omitempty"`
+	Password *EditableField `json:"password,omitempty"`
 }
 
 // TOTP credential schema.
 type TOTPCredential struct {
-	Type        string `json:"type"`
-	Secret      string `json:"secret"`
-	Algorithm   string `json:"algorithm"`
-	Period      int    `json:"period"`
-	Digits      int    `json:"digits"`
-	Issuer      string `json:"issuer,omitempty"`
-	AccountName string `json:"accountName,omitempty"`
+	Type      string `json:"type"`
+	Secret    string `json:"secret"`
+	Period    int    `json:"period"`
+	Digits    int    `json:"digits"`
+	Username  string `json:"username,omitempty"`
+	Algorithm string `json:"algorithm"`
+	Issuer    string `json:"issuer,omitempty"`
 }
 
 var totpAllowedAlgorithms = map[string]struct{}{
-	"SHA1":   {},
-	"SHA256": {},
-	"SHA512": {},
+	"sha1":   {},
+	"sha256": {},
+	"sha512": {},
 }
 
 var totpAllowedDigits = map[int]struct{}{
@@ -280,90 +289,75 @@ var totpAllowedDigits = map[int]struct{}{
 type PasskeyCredential struct {
 	Type            string           `json:"type"`
 	CredentialID    string           `json:"credentialId"`
-	PrivateKey      string           `json:"privateKey,omitempty"`
-	Key             json.RawMessage  `json:"key,omitempty"`
-	RpId            string           `json:"rpId,omitempty"`
-	UserName        string           `json:"userName,omitempty"`
-	UserDisplayName string           `json:"userDisplayName,omitempty"`
-	UserHandle      string           `json:"userHandle,omitempty"`
-	PublicKey       string           `json:"publicKey,omitempty"`
-	SignCount       uint32           `json:"signCount,omitempty"`
+	RpId            string           `json:"rpId"`
+	Username        string           `json:"username"`
+	UserDisplayName string           `json:"userDisplayName"`
+	UserHandle      string           `json:"userHandle"`
+	Key             string           `json:"key"`
 	Fido2Extensions *Fido2Extensions `json:"fido2Extensions,omitempty"`
 }
 
 type Fido2Extensions struct {
-	HmacSecret       *Fido2HmacSecret       `json:"hmacSecret,omitempty"`
-	CredBlob         string                 `json:"credBlob,omitempty"`
-	LargeBlob        *Fido2LargeBlob        `json:"largeBlob,omitempty"`
-	Payments         *bool                  `json:"payments,omitempty"`
-	SupplementalKeys *Fido2SupplementalKeys `json:"supplementalKeys,omitempty"`
+	HmacCredentials *Fido2HmacCredentials `json:"hmacCredentials,omitempty"`
+	CredBlob        string                `json:"credBlob,omitempty"`
+	LargeBlob       *Fido2LargeBlob       `json:"largeBlob,omitempty"`
+	Payments        *bool                 `json:"payments,omitempty"`
 }
 
-type Fido2HmacSecret struct {
-	Algorithm string `json:"algorithm"`
-	Secret    string `json:"secret"`
+type Fido2HmacCredentials struct {
+	Algorithm     string `json:"algorithm"`
+	CredWithUV    string `json:"credWithUV"`
+	CredWithoutUV string `json:"credWithoutUV"`
 }
 
 type Fido2LargeBlob struct {
-	Size uint64 `json:"size"`
-	Alg  string `json:"alg"`
-	Data string `json:"data"`
-}
-
-type Fido2SupplementalKeys struct {
-	Device   *bool `json:"device,omitempty"`
-	Provider *bool `json:"provider,omitempty"`
+	UncompressedSize uint64 `json:"uncompressedSize"`
+	Data             string `json:"data"`
 }
 
 // File credential schema.
 type FileCredential struct {
 	Type          string `json:"type"`
+	ID            string `json:"id"`
 	Name          string `json:"name"`
-	MimeType      string `json:"mimeType"`
-	Data          string `json:"data"`
+	DecryptedSize uint64 `json:"decryptedSize"`
 	IntegrityHash string `json:"integrityHash"`
 }
 
 // Credit card credential schema.
 type CreditCardCredential struct {
-	Type               string `json:"type"`
-	Number             string `json:"number"`
-	FullName           string `json:"fullName"`
-	CardType           string `json:"cardType,omitempty"`
-	VerificationNumber string `json:"verificationNumber,omitempty"`
-	ExpiryDate         string `json:"expiryDate,omitempty"`
-	ValidFrom          string `json:"validFrom,omitempty"`
+	Type               string         `json:"type"`
+	Number             *EditableField `json:"number,omitempty"`
+	FullName           *EditableField `json:"fullName,omitempty"`
+	CardType           *EditableField `json:"cardType,omitempty"`
+	VerificationNumber *EditableField `json:"verificationNumber,omitempty"`
+	PIN                *EditableField `json:"pin,omitempty"`
+	ExpiryDate         *EditableField `json:"expiryDate,omitempty"`
+	ValidFrom          *EditableField `json:"validFrom,omitempty"`
 }
 
 // Note credential schema.
 type NoteCredential struct {
-	Type string `json:"type"`
-	Text string `json:"text"`
+	Type    string         `json:"type"`
+	Content *EditableField `json:"content,omitempty"`
 }
 
 func ValidateBasicAuthCredential(c BasicAuthCredential) error {
 	if c.Type != CredentialTypeBasicAuth {
 		return ErrInvalidCredentialType
 	}
-	if len(c.Urls) == 0 {
+	if c.Username == nil && c.Password == nil {
 		return ErrMissingFields
 	}
-	for _, u := range c.Urls {
-		if u == "" {
-			return ErrInvalidCredential
+	if c.Username != nil {
+		if err := ValidateEditableFieldWithExpectedType(*c.Username, FieldTypeString); err != nil {
+			return err
 		}
 	}
-	if c.Username.FieldType == "" || len(c.Username.Value) == 0 {
-		return ErrMissingFields
-	}
-	if err := ValidateEditableField(c.Username); err != nil {
-		return err
-	}
-	if c.Password.FieldType == "" || len(c.Password.Value) == 0 {
-		return ErrMissingFields
-	}
-	if err := ValidateEditableField(c.Password); err != nil {
-		return err
+	if c.Password != nil {
+		if err := ValidateEditableFieldWithExpectedType(*c.Password, FieldTypeConcealedString); err != nil {
+			return err
+		}
 	}
 	return nil
 }
@@ -374,10 +368,22 @@ func ValidateAPIKeyCredential(c APIKeyCredential) error {
 	}
 	fields := []*EditableField{c.Key, c.Username, c.KeyType, c.URL, c.ValidFrom, c.ExpiryDate}
 	present := false
-	for _, f := range fields {
-		if f != nil {
-			present = true
-			if err := ValidateEditableField(*f); err != nil {
+	for idx, f := range fields {
+		if f == nil {
+			continue
+		}
+		present = true
+		switch idx {
+		case 0:
+			if err := ValidateEditableFieldWithExpectedType(*f, FieldTypeConcealedString); err != nil {
+				return err
+			}
+		case 1, 2, 3:
+			if err := ValidateEditableFieldWithExpectedType(*f, FieldTypeString); err != nil {
+				return err
+			}
+		case 4, 5:
+			if err := ValidateEditableFieldWithExpectedType(*f, FieldTypeDate); err != nil {
 				return err
 			}
 		}
@@ -394,12 +400,20 @@ func ValidateAddressCredential(c AddressCredential) error {
 	}
 	fields := []*EditableField{c.StreetAddress, c.PostalCode, c.City, c.Territory, c.Country, c.Tel}
 	present := false
-	for _, f := range fields {
-		if f != nil {
-			present = true
-			if err := ValidateEditableField(*f); err != nil {
-				return err
-			}
+	for idx, f := range fields {
+		if f == nil {
+			continue
+		}
+		present = true
+		expected := FieldTypeString
+		switch idx {
+		case 3:
+			expected = FieldTypeSubdivisionCode
+		case 4:
+			expected = FieldTypeCountryCode
+		}
+		if err := ValidateEditableFieldWithExpectedType(*f, expected); err != nil {
+			return err
 		}
 	}
 	if !present {
@@ -441,70 +455,23 @@ func ValidatePasskeyCredential(c PasskeyCredential) error {
 	if c.Type != CredentialTypePasskey {
 		return ErrInvalidCredentialType
 	}
-	if c.CredentialID == "" {
+	if c.CredentialID == "" || c.RpId == "" || c.Username == "" || c.UserDisplayName == "" || c.UserHandle == "" || c.Key == "" {
 		return ErrMissingFields
 	}
 	if err := ValidateIdentifier(c.CredentialID); err != nil {
 		return err
 	}
-
-	hasPrivate := c.PrivateKey != ""
-	hasKey := len(c.Key) > 0
-
-	if !hasPrivate && !hasKey {
-		return ErrMissingFields
+	if _, err := DecodeBase64URL(c.UserHandle); err != nil {
+		return ErrInvalidCredential
 	}
-
-	if hasPrivate {
-		privDER, err := DecodeBase64URL(c.PrivateKey)
-		if err != nil {
-			return ErrInvalidCredential
-		}
-		if _, err := x509.ParsePKCS8PrivateKey(privDER); err != nil {
-			return ErrInvalidCredential
+	if _, err := DecodeBase64URL(c.Key); err != nil {
+		return ErrInvalidCredential
+	}
+	if c.Fido2Extensions != nil {
+		if err := validateFido2Extensions(c.Fido2Extensions); err != nil {
+			return err
 		}
 	}
-
-	if hasKey {
-		var v interface{}
-		if err := json.Unmarshal(c.Key, &v); err != nil {
-			return ErrInvalidCredential
-		}
-		switch val := v.(type) {
-		case string:
-			if val == "" {
-				return ErrInvalidCredential
-			}
-			if _, err := DecodeBase64URL(val); err != nil {
-				return ErrInvalidCredential
-			}
-		case map[string]interface{}:
-			if len(val) == 0 {
-				return ErrInvalidCredential
-			}
-		default:
-			return ErrInvalidCredential
-		}
-	}
-
-	if c.PublicKey != "" {
-		if _, err := DecodeBase64URL(c.PublicKey); err != nil {
-			return ErrInvalidCredential
-		}
-	}
-
-	extendedProvided := hasKey || c.RpId != "" || c.UserName != "" || c.UserDisplayName != "" || c.UserHandle != "" || c.Fido2Extensions != nil
-	if extendedProvided {
-		if c.RpId == "" || c.UserName == "" || c.UserDisplayName == "" || c.UserHandle == "" || !hasKey {
-			return ErrMissingFields
-		}
-		if c.Fido2Extensions != nil {
-			if err := validateFido2Extensions(c.Fido2Extensions); err != nil {
-				return err
-			}
-		}
-	}
-
 	return nil
 }
 
@@ -513,12 +480,18 @@ func validateFido2Extensions(ext *Fido2Extensions) error {
 		return nil
 	}
 
-	if ext.HmacSecret != nil {
-		if ext.HmacSecret.Algorithm == "" || ext.HmacSecret.Secret == "" {
+	if ext.HmacCredentials != nil {
+		if ext.HmacCredentials.Algorithm == "" || ext.HmacCredentials.CredWithUV == "" || ext.HmacCredentials.CredWithoutUV == "" {
 			return ErrMissingFields
 		}
-		if err := ValidateBase64URL(ext.HmacSecret.Secret); err != nil {
-			return ErrInvalidCredential
+		for _, v := range []string{ext.HmacCredentials.CredWithUV, ext.HmacCredentials.CredWithoutUV} {
+			decoded, err := DecodeBase64URL(v)
+			if err != nil {
+				return ErrInvalidCredential
+			}
+			if len(decoded) != 32 {
+				return ErrInvalidCredential
+			}
 		}
 	}
 
@@ -529,14 +502,10 @@ func validateFido2Extensions(ext *Fido2Extensions) error {
 	}
 
 	if ext.LargeBlob != nil {
-		if ext.LargeBlob.Size == 0 || ext.LargeBlob.Alg == "" || ext.LargeBlob.Data == "" {
+		if ext.LargeBlob.UncompressedSize == 0 || ext.LargeBlob.Data == "" {
 			return ErrMissingFields
 		}
-		decoded, err := DecodeBase64URL(ext.LargeBlob.Data)
-		if err != nil {
-			return ErrInvalidCredential
-		}
-		if uint64(len(decoded)) != ext.LargeBlob.Size {
+		if _, err := DecodeBase64URL(ext.LargeBlob.Data); err != nil {
 			return ErrInvalidCredential
 		}
 	}
@@ -548,15 +517,13 @@ func ValidateFileCredential(c FileCredential) error {
 	if c.Type != CredentialTypeFile {
 		return ErrInvalidCredentialType
 	}
-	if c.Name == "" || c.MimeType == "" || c.Data == "" || c.IntegrityHash == "" {
+	if c.ID == "" || c.Name == "" || c.DecryptedSize == 0 || c.IntegrityHash == "" {
 		return ErrMissingFields
 	}
-	dataBytes, err := DecodeBase64URL(c.Data)
-	if err != nil {
-		return ErrInvalidCredential
+	if err := ValidateIdentifier(c.ID); err != nil {
+		return err
 	}
-	expected := ComputeIntegrityHash(dataBytes)
-	if expected != c.IntegrityHash {
+	if err := ValidateBase64URL(c.IntegrityHash); err != nil {
 		return ErrInvalidCredential
 	}
 	return nil
@@ -566,15 +533,26 @@ func ValidateCreditCardCredential(c CreditCardCredential) error {
 	if c.Type != CredentialTypeCreditCard {
 		return ErrInvalidCredentialType
 	}
-	normalized := normalizeCreditCardNumber(c.Number)
-	if normalized == "" || c.FullName == "" {
+	fields := []*EditableField{c.Number, c.FullName, c.CardType, c.VerificationNumber, c.PIN, c.ExpiryDate, c.ValidFrom}
+	present := false
+	for idx, f := range fields {
+		if f == nil {
+			continue
+		}
+		present = true
+		expected := FieldTypeString
+		switch idx {
+		case 0, 3, 4:
+			expected = FieldTypeConcealedString
+		case 5, 6:
+			expected = FieldTypeYearMonth
+		}
+		if err := ValidateEditableFieldWithExpectedType(*f, expected); err != nil {
+			return err
+		}
+	}
+	if !present {
 		return ErrMissingFields
-	}
-	if len(normalized) < 12 || len(normalized) > 19 {
-		return ErrInvalidCredential
-	}
-	if !luhnCheck(normalized) {
-		return ErrInvalidCredential
 	}
 	return nil
 }
@@ -583,46 +561,13 @@ func ValidateNoteCredential(c NoteCredential) error {
 	if c.Type != CredentialTypeNote {
 		return ErrInvalidCredentialType
 	}
-	if c.Text == "" {
+	if c.Content == nil {
 		return ErrMissingFields
 	}
+	if err := ValidateEditableFieldWithExpectedType(*c.Content, FieldTypeString); err != nil {
+		return err
+	}
 	return nil
-}
-
-func normalizeCreditCardNumber(number string) string {
-	buf := make([]byte, 0, len(number))
-	for i := 0; i < len(number); i++ {
-		ch := number[i]
-		if ch == ' ' || ch == '-' {
-			continue
-		}
-		buf = append(buf, ch)
-	}
-	return string(buf)
-}
-
-func luhnCheck(number string) bool {
-	if number == "" {
-		return false
-	}
-	sum := 0
-	double := false
-	for i := len(number) - 1; i >= 0; i-- {
-		d := number[i]
-		if d < '0' || d > '9' {
-			return false
-		}
-		n := int(d - '0')
-		if double {
-			n *= 2
-			if n > 9 {
-				n -= 9
-			}
-		}
-		sum += n
-		double = !double
-	}
-	return sum%10 == 0
 }
 
 // ComputeIntegrityHash returns the base64url-encoded SHA-256 hash of the data.
