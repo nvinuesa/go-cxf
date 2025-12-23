@@ -304,9 +304,25 @@ func ValidateFileCredential(c FileCredential) error {
 	if err != nil {
 		return ErrInvalidCredential
 	}
-	hash := sha256.Sum256(dataBytes)
-	expected := EncodeBase64URL(hash[:])
+	expected := ComputeIntegrityHash(dataBytes)
 	if expected != c.IntegrityHash {
+		return ErrInvalidCredential
+	}
+	return nil
+}
+
+// ComputeIntegrityHash returns the base64url-encoded SHA-256 hash of the data.
+func ComputeIntegrityHash(data []byte) string {
+	sum := sha256.Sum256(data)
+	return EncodeBase64URL(sum[:])
+}
+
+// ValidateIntegrityHash compares the provided integrity hash against the SHA-256 of data.
+func ValidateIntegrityHash(data []byte, integrityHash string) error {
+	if integrityHash == "" {
+		return ErrMissingFields
+	}
+	if ComputeIntegrityHash(data) != integrityHash {
 		return ErrInvalidCredential
 	}
 	return nil

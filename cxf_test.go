@@ -287,3 +287,30 @@ func TestValidateCredentialFileInvalidHash(t *testing.T) {
 		t.Fatalf("expected ErrInvalidCredential for bad hash, got %v", err)
 	}
 }
+
+func TestComputeIntegrityHash(t *testing.T) {
+	data := []byte("hello")
+	sum := sha256.Sum256(data)
+	want := EncodeBase64URL(sum[:])
+	got := ComputeIntegrityHash(data)
+	if got != want {
+		t.Fatalf("ComputeIntegrityHash mismatch: got %s, want %s", got, want)
+	}
+}
+
+func TestValidateIntegrityHash(t *testing.T) {
+	data := []byte("hello")
+	hash := ComputeIntegrityHash(data)
+
+	if err := ValidateIntegrityHash(data, hash); err != nil {
+		t.Fatalf("expected valid integrity hash, got %v", err)
+	}
+
+	if err := ValidateIntegrityHash(data, "bogus"); err != ErrInvalidCredential {
+		t.Fatalf("expected ErrInvalidCredential for mismatched hash, got %v", err)
+	}
+
+	if err := ValidateIntegrityHash(data, ""); err != ErrMissingFields {
+		t.Fatalf("expected ErrMissingFields for empty hash, got %v", err)
+	}
+}
