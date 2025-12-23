@@ -1,6 +1,6 @@
 module github.com/nvinuesa/go-cxf
 
-go 1.24.11
+go 1.21
 
 require github.com/fxamacker/cbor/v2 v2.9.0
 

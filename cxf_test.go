@@ -143,6 +143,54 @@ func TestHeaderJSONRoundTrip(t *testing.T) {
 	}
 }
 
+func TestHeaderJSONRoundTripWithWiFiAndSSH(t *testing.T) {
+	wifi := json.RawMessage(`{"type":"wifi","ssid":{"fieldType":"string","value":"MyWiFi"},"security":{"fieldType":"wifi-network-security-type","value":"wpa2"},"password":{"fieldType":"concealed-string","value":"secret"},"hidden":{"fieldType":"boolean","value":false}}`)
+	ssh := json.RawMessage(`{"type":"ssh-key","privateKey":{"fieldType":"concealed-string","value":"PRIVATE"},"publicKey":{"fieldType":"string","value":"PUBLIC"},"keyType":{"fieldType":"string","value":"ed25519"},"comment":{"fieldType":"string","value":"work"}}`)
+
+	item := Item{
+		ID:          "aXRlbS0y",
+		Title:       "WiFi+SSH",
+		Credentials: []json.RawMessage{wifi, ssh},
+	}
+	account := Account{
+		ID:       "YWNjb3VudC0y",
+		Username: "user2",
+		Email:    "user2@example.com",
+		Items:    []Item{item},
+	}
+	h := &Header{
+		Version: Version{
+			Major: VersionMajor,
+			Minor: VersionMinor,
+		},
+		ExporterRpId:        "exporter.example.com",
+		ExporterDisplayName: "Exporter",
+		Timestamp:           1710000001,
+		Accounts:            []Account{account},
+	}
+
+	data, err := h.Marshal()
+	if err != nil {
+		t.Fatalf("marshal error: %v", err)
+	}
+
+	var restored Header
+	if err := json.Unmarshal(data, &restored); err != nil {
+		t.Fatalf("unmarshal error: %v", err)
+	}
+
+	if err := restored.Validate(); err != nil {
+		t.Fatalf("restored header validation failed: %v", err)
+	}
+
+	if len(restored.Accounts) != 1 || len(restored.Accounts[0].Items) != 1 {
+		t.Fatalf("accounts/items mismatch after round trip")
+	}
+	if len(restored.Accounts[0].Items[0].Credentials) != 2 {
+		t.Fatalf("expected two credentials after round trip")
+	}
+}
+
 func TestValidateEditableFieldBoolean(t *testing.T) {
 	f := EditableField{FieldType: FieldTypeBoolean, Value: json.RawMessage("true")}
 	if err := ValidateEditableField(f); err != nil {
@@ -208,6 +256,66 @@ func TestValidateEditableFieldStringTypes(t *testing.T) {
 	f.Value = json.RawMessage("123")
 	if err := ValidateEditableField(f); err != ErrInvalidFieldValue {
 		t.Fatalf("expected ErrInvalidFieldValue for non-string value, got %v", err)
+	}
+}
+
+func TestValidateEditableFieldDate(t *testing.T) {
+	f := EditableField{FieldType: FieldTypeDate, Value: json.RawMessage("\"2024-02-29\"")}
+	if err := ValidateEditableField(f); err != nil {
+		t.Fatalf("expected valid date, got %v", err)
+	}
+
+	f.Value = json.RawMessage("\"2024-13-01\"")
+	if err := ValidateEditableField(f); err != ErrInvalidFieldValue {
+		t.Fatalf("expected ErrInvalidFieldValue for bad date, got %v", err)
+	}
+}
+
+func TestValidateEditableFieldYearMonth(t *testing.T) {
+	f := EditableField{FieldType: FieldTypeYearMonth, Value: json.RawMessage("\"2024-12\"")}
+	if err := ValidateEditableField(f); err != nil {
+		t.Fatalf("expected valid year-month, got %v", err)
+	}
+
+	f.Value = json.RawMessage("\"2024-13\"")
+	if err := ValidateEditableField(f); err != ErrInvalidFieldValue {
+		t.Fatalf("expected ErrInvalidFieldValue for bad year-month, got %v", err)
+	}
+}
+
+func TestValidateEditableFieldCountryCode(t *testing.T) {
+	f := EditableField{FieldType: FieldTypeCountryCode, Value: json.RawMessage("\"US\"")}
+	if err := ValidateEditableField(f); err != nil {
+		t.Fatalf("expected valid country-code, got %v", err)
+	}
+
+	f.Value = json.RawMessage("\"usa\"")
+	if err := ValidateEditableField(f); err != ErrInvalidFieldValue {
+		t.Fatalf("expected ErrInvalidFieldValue for lowercase/len!=2, got %v", err)
+	}
+}
+
+func TestValidateEditableFieldSubdivisionCode(t *testing.T) {
+	f := EditableField{FieldType: FieldTypeSubdivisionCode, Value: json.RawMessage("\"US-CA\"")}
+	if err := ValidateEditableField(f); err != nil {
+		t.Fatalf("expected valid subdivision-code, got %v", err)
+	}
+
+	f.Value = json.RawMessage("\"USCA\"")
+	if err := ValidateEditableField(f); err != ErrInvalidFieldValue {
+		t.Fatalf("expected ErrInvalidFieldValue for missing dash, got %v", err)
+	}
+}
+
+func TestValidateEditableFieldWifiSecurity(t *testing.T) {
+	f := EditableField{FieldType: FieldTypeWifiNetworkSecurity, Value: json.RawMessage("\"wpa2\"")}
+	if err := ValidateEditableField(f); err != nil {
+		t.Fatalf("expected valid wifi security value, got %v", err)
+	}
+
+	f.Value = json.RawMessage("\"unknown\"")
+	if err := ValidateEditableField(f); err != ErrInvalidFieldValue {
+		t.Fatalf("expected ErrInvalidFieldValue for invalid wifi security, got %v", err)
 	}
 }
 
@@ -307,7 +415,7 @@ func TestValidateIntegrityHash(t *testing.T) {
 }
 
 func TestValidateCredentialBasicAuthValid(t *testing.T) {
-	raw := json.RawMessage(`{"type":"basic-auth","username":{"fieldType":"string","value":"\"user\""},"password":{"fieldType":"concealed-string","value":"\"pass\""}}`)
+	raw := json.RawMessage(`{"type":"basic-auth","username":{"fieldType":"string","value":"user"},"password":{"fieldType":"concealed-string","value":"pass"}}`)
 	if err := ValidateCredential(raw); err != nil {
 		t.Fatalf("expected valid basic-auth credential, got %v", err)
 	}
@@ -321,7 +429,7 @@ func TestValidateCredentialBasicAuthMissingFields(t *testing.T) {
 }
 
 func TestValidateCredentialCreditCardValid(t *testing.T) {
-	raw := json.RawMessage(`{"type":"credit-card","number":{"fieldType":"concealed-string","value":"\"4111 1111 1111 1111\""},"expiryDate":{"fieldType":"year-month","value":"\"2025-12\""}}`)
+	raw := json.RawMessage(`{"type":"credit-card","number":{"fieldType":"concealed-string","value":"4111 1111 1111 1111"},"expiryDate":{"fieldType":"year-month","value":"2025-12"}}`)
 	if err := ValidateCredential(raw); err != nil {
 		t.Fatalf("expected valid credit-card credential, got %v", err)
 	}
@@ -342,14 +450,14 @@ func TestValidateCredentialNoteMissingContent(t *testing.T) {
 }
 
 func TestValidateCredentialNoteValid(t *testing.T) {
-	raw := json.RawMessage(`{"type":"note","content":{"fieldType":"string","value":"\"hello\""}}`)
+	raw := json.RawMessage(`{"type":"note","content":{"fieldType":"string","value":"hello"}}`)
 	if err := ValidateCredential(raw); err != nil {
 		t.Fatalf("expected valid note, got %v", err)
 	}
 }
 
 func TestValidateCredentialAPIKeyValid(t *testing.T) {
-	raw := json.RawMessage(`{"type":"api-key","key":{"fieldType":"concealed-string","value":"\"secret-key\""},"validFrom":{"fieldType":"date","value":"\"2025-03-13\""}}`)
+	raw := json.RawMessage(`{"type":"api-key","key":{"fieldType":"concealed-string","value":"secret-key"},"validFrom":{"fieldType":"date","value":"2025-03-13"}}`)
 	if err := ValidateCredential(raw); err != nil {
 		t.Fatalf("expected valid api-key credential, got %v", err)
 	}
@@ -365,8 +473,8 @@ func TestValidateCredentialAPIKeyMissingAll(t *testing.T) {
 func TestValidateCredentialAddressValid(t *testing.T) {
 	raw := json.RawMessage(`{
 		"type":"address",
-		"streetAddress":{"fieldType":"string","value":"\"123 Main St\""},
-		"country":{"fieldType":"country-code","value":"\"US\""}
+		"streetAddress":{"fieldType":"string","value":"123 Main St"},
+		"country":{"fieldType":"country-code","value":"US"}
 	}`)
 	if err := ValidateCredential(raw); err != nil {
 		t.Fatalf("expected valid address credential, got %v", err)
@@ -395,7 +503,7 @@ func TestValidateCredentialGeneratedPasswordMissingPassword(t *testing.T) {
 }
 
 func TestValidateCredentialPersonName(t *testing.T) {
-	raw := json.RawMessage(`{"type":"person-name","fullName":{"fieldType":"string","value":"\"Ada Lovelace\""}}`)
+	raw := json.RawMessage(`{"type":"person-name","fullName":{"fieldType":"string","value":"Ada Lovelace"}}`)
 	if err := ValidateCredential(raw); err != nil {
 		t.Fatalf("expected valid person-name credential, got %v", err)
 	}
@@ -409,9 +517,9 @@ func TestValidateCredentialPersonName(t *testing.T) {
 func TestValidateCredentialIdentityDocument(t *testing.T) {
 	raw := json.RawMessage(`{
 		"type":"identity-document",
-		"documentNumber":{"fieldType":"string","value":"\"ID123\""},
-		"issueDate":{"fieldType":"date","value":"\"2024-01-01\""},
-		"issuingCountry":{"fieldType":"country-code","value":"\"US\""}
+		"documentNumber":{"fieldType":"string","value":"ID123"},
+		"issueDate":{"fieldType":"date","value":"2024-01-01"},
+		"issuingCountry":{"fieldType":"country-code","value":"US"}
 	}`)
 	if err := ValidateCredential(raw); err != nil {
 		t.Fatalf("expected valid identity-document credential, got %v", err)
@@ -426,9 +534,9 @@ func TestValidateCredentialIdentityDocument(t *testing.T) {
 func TestValidateCredentialDriversLicense(t *testing.T) {
 	raw := json.RawMessage(`{
 		"type":"drivers-license",
-		"documentNumber":{"fieldType":"string","value":"\"DL123\""},
-		"expiryDate":{"fieldType":"date","value":"\"2026-05-05\""},
-		"issuingCountry":{"fieldType":"country-code","value":"\"CA\""}
+		"documentNumber":{"fieldType":"string","value":"DL123"},
+		"expiryDate":{"fieldType":"date","value":"2026-05-05"},
+		"issuingCountry":{"fieldType":"country-code","value":"CA"}
 	}`)
 	if err := ValidateCredential(raw); err != nil {
 		t.Fatalf("expected valid drivers-license, got %v", err)
@@ -443,9 +551,9 @@ func TestValidateCredentialDriversLicense(t *testing.T) {
 func TestValidateCredentialPassport(t *testing.T) {
 	raw := json.RawMessage(`{
 		"type":"passport",
-		"documentNumber":{"fieldType":"string","value":"\"P123\""},
-		"validFrom":{"fieldType":"date","value":"\"2023-01-01\""},
-		"issuingCountry":{"fieldType":"country-code","value":"\"GB\""}
+		"documentNumber":{"fieldType":"string","value":"P123"},
+		"validFrom":{"fieldType":"date","value":"2023-01-01"},
+		"issuingCountry":{"fieldType":"country-code","value":"GB"}
 	}`)
 	if err := ValidateCredential(raw); err != nil {
 		t.Fatalf("expected valid passport, got %v", err)
@@ -460,7 +568,7 @@ func TestValidateCredentialPassport(t *testing.T) {
 func TestValidateCredentialCustomFields(t *testing.T) {
 	raw := json.RawMessage(`{
 		"type":"custom-fields",
-		"fields":[{"fieldType":"string","value":"\"foo\""}]
+		"fields":[{"fieldType":"string","value":"foo"}]
 	}`)
 	if err := ValidateCredential(raw); err != nil {
 		t.Fatalf("expected valid custom-fields, got %v", err)
@@ -475,14 +583,14 @@ func TestValidateCredentialCustomFields(t *testing.T) {
 func TestValidateCredentialSSHKey(t *testing.T) {
 	raw := json.RawMessage(`{
 		"type":"ssh-key",
-		"privateKey":{"fieldType":"concealed-string","value":"\"PRIVATE\""},
-		"keyType":{"fieldType":"string","value":"\"ed25519\""}
+		"privateKey":{"fieldType":"concealed-string","value":"PRIVATE"},
+		"keyType":{"fieldType":"string","value":"ed25519"}
 	}`)
 	if err := ValidateCredential(raw); err != nil {
 		t.Fatalf("expected valid ssh-key, got %v", err)
 	}
 
-	rawMissing := json.RawMessage(`{"type":"ssh-key","keyType":{"fieldType":"string","value":"\"ed25519\""}}`)
+	rawMissing := json.RawMessage(`{"type":"ssh-key","keyType":{"fieldType":"string","value":"ed25519"}}`)
 	if err := ValidateCredential(rawMissing); err != ErrMissingFields {
 		t.Fatalf("expected ErrMissingFields for ssh-key without keys, got %v", err)
 	}
@@ -491,9 +599,9 @@ func TestValidateCredentialSSHKey(t *testing.T) {
 func TestValidateCredentialWiFi(t *testing.T) {
 	raw := json.RawMessage(`{
 		"type":"wifi",
-		"ssid":{"fieldType":"string","value":"\"MyWiFi\""},
-		"security":{"fieldType":"wifi-network-security-type","value":"\"wpa2\""},
-		"password":{"fieldType":"concealed-string","value":"\"secret\""},
+		"ssid":{"fieldType":"string","value":"MyWiFi"},
+		"security":{"fieldType":"wifi-network-security-type","value":"wpa2"},
+		"password":{"fieldType":"concealed-string","value":"secret"},
 		"hidden":{"fieldType":"boolean","value":false}
 	}`)
 	if err := ValidateCredential(raw); err != nil {

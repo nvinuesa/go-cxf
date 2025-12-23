@@ -1,22 +1,13 @@
 # go-cxf
 
-A Go library implementing the FIDO Alliance Credential Exchange Format (CXF) v1.0 specification.
+A Go library implementing the FIDO Alliance Credential Exchange Format (CXF) v1.0.
 
 ## Overview
 
-go-cxf provides a complete implementation of the CXF specification for exchanging FIDO credentials in a standardized format. The library supports both JSON and CBOR serialization formats, making it suitable for various use cases including credential backup, migration, and synchronization.
-
-## Features
-
-- ✅ Full CXF v1.0 specification compliance
-- ✅ Support for multiple credential types (public-key, passkey, FIDO2)
-- ✅ JSON and CBOR serialization/deserialization
-- ✅ Comprehensive validation
-- ✅ Base64URL encoding/decoding utilities
-- ✅ Credential and user ID generation
-- ✅ Extensive test coverage
-- ✅ Type-safe API
-- ✅ Zero external dependencies (except CBOR library)
+- JSON and CBOR serialization for CXF headers.
+- Rich credential type coverage with strong validation.
+- Base64URL/Base32 utilities and identifier helpers.
+- Zero external dependencies beyond CBOR (fxamacker/cbor).
 
 ## Installation
 
@@ -30,272 +21,144 @@ go get github.com/nvinuesa/go-cxf
 package main
 
 import (
-    "fmt"
-    "log"
-    
-    "github.com/nvinuesa/go-cxf"
+	"encoding/json"
+	"fmt"
+
+	"github.com/nvinuesa/go-cxf"
 )
 
 func main() {
-    // Create a new CXF container
-    container := cxf.NewContainer("credential")
-    
-    // Generate IDs
-    credID, _ := cxf.GenerateCredentialID(32)
-    userID, _ := cxf.GenerateUserID(32)
-    
-    // Create a credential
-    cred := cxf.NewCredential(
-        credID,
-        cxf.CredentialTypePasskey,
-        "example.com",
-        "Example Site",
-        userID,
-        "user@example.com",
-        "Example User",
-    )
-    
-    // Add public key information
-    cred.PublicKey = &cxf.PublicKeyCredential{
-        CredentialID: credID,
-        Algorithm:    -7, // ES256
-        PublicKey:    cxf.EncodeBase64URL([]byte("public-key-data")),
-        SignCount:    0,
-        Transports:   []cxf.AuthenticatorTransport{cxf.TransportInternal},
-    }
-    
-    // Add to container
-    container.AddCredential(*cred)
-    
-    // Serialize to JSON
-    jsonData, err := container.MarshalIndent()
-    if err != nil {
-        log.Fatal(err)
-    }
-    
-    fmt.Println(string(jsonData))
+	// Build a minimal header (alias: Container).
+	cred := json.RawMessage(`{"type":"totp","secret":"JBSWY3DPEHPK3PXP","algorithm":"sha1","period":30,"digits":6}`)
+	item := cxf.Item{
+		ID:          "aXRlbS0x", // base64url("item-1")
+		Title:       "My TOTP",
+		Credentials: []json.RawMessage{cred},
+	}
+	account := cxf.Account{
+		ID:       "YWNjb3VudC0x", // base64url("account-1")
+		Username: "user",
+		Email:    "user@example.com",
+		Items:    []cxf.Item{item},
+	}
+	header := &cxf.Header{
+		Version: cxf.Version{Major: cxf.VersionMajor, Minor: cxf.VersionMinor},
+		ExporterRpId:        "exporter.example.com",
+		ExporterDisplayName: "Exporter",
+		Timestamp:           1710000000,
+		Accounts:            []cxf.Account{account},
+	}
+
+	// Validate
+	if err := header.Validate(); err != nil {
+		panic(err)
+	}
+
+	// JSON round trip
+	data, _ := header.MarshalIndent()
+	fmt.Println(string(data))
 }
 ```
 
-## Core Types
+## Core types
 
-### Container
+- `Header` (alias `Container`): top-level CXF structure with version, exporter info, timestamp, accounts.
+- `Account`: id, username, email, collections, items.
+- `Item`: id, title, credentials, optional scope/tags/favorite.
+- `CredentialScope`: urls and Android app IDs.
+- `EditableField`: typed, user-editable field with `fieldType` and JSON `value`.
+- `Extension`: name + arbitrary data map.
 
-The `Container` is the top-level structure for CXF credential exchange:
+## Credential types
 
-```go
-type Container struct {
-    Version       string                 // CXF specification version
-    FormatVersion string                 // Format version
-    Type          string                 // Container type
-    Created       time.Time              // Creation timestamp
-    Credentials   []Credential           // List of credentials
-    Metadata      map[string]interface{} // Additional metadata
-}
-```
+Implemented and validated:
 
-### Credential
+- `basic-auth`
+- `totp`
+- `passkey`
+- `file`
+- `credit-card`
+- `note`
+- `api-key`
+- `address`
+- `generated-password`
+- `identity-document`
+- `drivers-license`
+- `passport`
+- `person-name`
+- `custom-fields`
+- `ssh-key`
+- `wifi`
+- `item-reference`
 
-The `Credential` represents a single credential:
+## Editable field types and constraints
 
-```go
-type Credential struct {
-    ID           string                 // Unique identifier
-    Type         CredentialType         // Credential type
-    Created      time.Time              // Creation timestamp
-    LastUsed     *time.Time             // Last usage timestamp
-    RelyingParty RelyingParty           // Relying party information
-    User         UserInfo               // User information
-    PublicKey    *PublicKeyCredential   // Public key data
-    PrivateKey   *PrivateKeyData        // Private key (if exported)
-    Attestation  *AttestationData       // Attestation information
-    Metadata     map[string]interface{} // Additional metadata
-}
-```
+- `string`, `concealed-string`, `email`
+- `number` (JSON number)
+- `boolean`
+- `date` (YYYY-MM-DD, `time.Parse("2006-01-02", s)`)
+- `year-month` (YYYY-MM, `time.Parse("2006-01", s)`)
+- `wifi-network-security-type` (one of: open, wep, wpa, wpa2, wpa3)
+- `country-code` (exactly 2 uppercase ASCII letters)
+- `subdivision-code` (must contain one dash, e.g., US-CA)
 
-## Credential Types
+All editable fields must include `fieldType` and non-empty `value`; optional `id` must be valid base64url (<=64 decoded bytes).
 
-The library supports the following credential types:
+## Validation highlights
 
-- `CredentialTypePublicKey` - Public key credentials
-- `CredentialTypePasskey` - Passkey credentials
-- `CredentialTypeFIDO2` - FIDO2 credentials
+- Header: version must match `VersionMajor/VersionMinor`; exporter fields and timestamp required; at least one account.
+- Account: id/username/email required; id must be base64url (<=64 bytes); at least one item.
+- Item: id/title required; id must be base64url (<=64 bytes); at least one credential.
+- Each credential type enforces required members, field types, and encodings:
+  - TOTP: algorithm in {sha1, sha256, sha512}; digits in {6,7,8}; secret base32.
+  - Passkey: ids/handles/keys base64url; HMAC secrets decode to 32 bytes; largeBlob data base64url.
+  - File: id base64url; integrityHash base64url; name non-empty; decryptedSize > 0.
+  - Credit card: expiry/validFrom are `year-month`; number/CVV/PIN are `concealed-string`.
+  - WiFi: ssid required; security allowed set; password `concealed-string`; hidden `boolean`.
+  - Address: country is `country-code`; territory is `subdivision-code`.
+  - Identity/Driver/Passport: date fields are `date`; issuingCountry is `country-code`.
+  - API key: date fields are `date`; key is `concealed-string`.
+  - SSH key: requires at least a private or public key; passphrase `concealed-string`.
+  - Item reference: itemId/accountId are base64url ids.
+  - Generated password: password non-empty plain string.
 
-## Serialization Formats
+Use `ValidateCredential` or `ValidateCredentials` for individual checks; `Header.Validate()` walks the full tree.
 
-### JSON
+## Serialization
 
-```go
-// Marshal to JSON
-jsonData, err := container.Marshal()
+- JSON: `Header.Marshal()` / `Header.MarshalIndent()` and standard `json.Unmarshal`.
+- CBOR: `MarshalHeaderCBOR` / `UnmarshalHeaderCBOR` plus generic `EncodeCBOR` / `DecodeCBOR`.
+- Integrity: `ComputeIntegrityHash` returns base64url-encoded SHA-256; `ValidateIntegrityHash` compares hashes.
 
-// Marshal with indentation
-jsonData, err := container.MarshalIndent()
+## Utilities
 
-// Unmarshal from JSON
-container, err := cxf.Unmarshal(jsonData)
-```
+- `EncodeBase64URL`, `DecodeBase64URL`, `ValidateBase64URL`
+- `EncodeBase32`, `DecodeBase32`, `ValidateBase32`
+- `GenerateIdentifier` (alias: `GenerateCredentialID`, `GenerateUserID`) produce base64url ids of given length (<=64 decoded bytes).
+- `ValidateIdentifier` ensures base64url and length <= 64 decoded bytes.
 
-### CBOR
+## Testing & CI
 
-```go
-// Marshal to CBOR
-cborData, err := cxf.MarshalContainerCBOR(container)
+- Local: `go test ./...`
+- Formatting: `gofmt -w .`
+- CI: GitHub Actions runs gofmt (fail on diff), `go vet ./...`, and `go test ./...` on push/PR (Go 1.21).
 
-// Unmarshal from CBOR
-container, err := cxf.UnmarshalContainerCBOR(cborData)
-```
-
-CBOR encoding typically results in 20-30% smaller payloads compared to JSON.
-
-## Validation
-
-The library provides comprehensive validation:
-
-```go
-// Validate container
-if err := container.Validate(); err != nil {
-    log.Printf("Validation failed: %v", err)
-}
-
-// Validate individual credential
-if err := credential.Validate(); err != nil {
-    log.Printf("Credential validation failed: %v", err)
-}
-```
-
-## Utility Functions
-
-### ID Generation
-
-```go
-// Generate credential ID (32 bytes)
-credID, err := cxf.GenerateCredentialID(32)
-
-// Generate user ID (32 bytes)
-userID, err := cxf.GenerateUserID(32)
-```
-
-### Base64URL Encoding
-
-```go
-// Encode to base64url
-encoded := cxf.EncodeBase64URL([]byte("data"))
-
-// Decode from base64url
-decoded, err := cxf.DecodeBase64URL(encoded)
-
-// Validate base64url string
-err := cxf.ValidateBase64URL(encoded)
-```
-
-## Attestation Formats
-
-The library supports all standard FIDO attestation formats:
-
-- `AttestationFormatPacked` - Packed attestation
-- `AttestationFormatTPM` - TPM attestation
-- `AttestationFormatAndroidKey` - Android Key attestation
-- `AttestationFormatAndroidSafetyNet` - Android SafetyNet attestation
-- `AttestationFormatFIDOU2F` - FIDO U2F attestation
-- `AttestationFormatApple` - Apple attestation
-- `AttestationFormatNone` - No attestation
-
-## Authenticator Transports
-
-Supported authenticator transports:
-
-- `TransportUSB` - USB
-- `TransportNFC` - NFC
-- `TransportBLE` - Bluetooth Low Energy
-- `TransportInternal` - Platform/internal authenticator
-- `TransportHybrid` - Hybrid transport
-
-## Examples
-
-See the [examples/basic](examples/basic/main.go) directory for complete examples including:
-
-- Basic container creation
-- Complete credentials with attestation
-- Multiple credentials handling
-- JSON and CBOR serialization comparison
-
-To run the examples:
-
-```bash
-cd examples/basic
-go run main.go
-```
-
-## Testing
-
-Run the test suite:
-
-```bash
-go test -v ./...
-```
-
-Run tests with coverage:
-
-```bash
-go test -v -cover ./...
-```
-
-## Project Structure
+## Project structure
 
 ```
 .
-├── cxf.go          # Core types and functions
-├── cxf_test.go     # Core tests
-├── cbor.go         # CBOR serialization support
-├── cbor_test.go    # CBOR tests
-├── utils.go        # Utility functions
+├── cxf.go          # Core types, validators
+├── cxf_test.go     # Core validation and round-trip tests
+├── cbor.go         # CBOR helpers
+├── cbor_test.go    # CBOR round-trip tests
+├── utils.go        # Base64/Base32 and ID utilities
 ├── utils_test.go   # Utility tests
 ├── examples/       # Example programs
 └── README.md       # This file
 ```
 
-## COSE Algorithm Identifiers
-
-Common COSE algorithm identifiers used in the library:
-
-- `-7` - ES256 (ECDSA with SHA-256)
-- `-35` - ES384 (ECDSA with SHA-384)
-- `-36` - ES512 (ECDSA with SHA-512)
-- `-8` - EdDSA
-- `-257` - RS256 (RSASSA-PKCS1-v1_5 with SHA-256)
-
-## Contributing
-
-Contributions are welcome! Please ensure:
-
-1. All tests pass: `go test ./...`
-2. Code is formatted: `go fmt ./...`
-3. Code is linted: `go vet ./...`
-4. New features include tests
-5. Commits follow conventional commit format
-
-## Conventional Commits
-
-This project uses conventional commits for clear and semantic commit messages:
-
-- `feat:` - New features
-- `fix:` - Bug fixes
-- `docs:` - Documentation changes
-- `test:` - Test additions or modifications
-- `refactor:` - Code refactoring
-- `chore:` - Maintenance tasks
-
-## License
-
-This project is licensed under the GNU Affero General Public License v3.0 - see the [LICENSE](LICENSE) file for details.
-
 ## References
 
-- [FIDO Alliance CXF Specification](https://fidoalliance.org/specs/cx/cxf-v1.0-wd-20240522.html)
-- [FIDO2 WebAuthn Specification](https://www.w3.org/TR/webauthn/)
-- [COSE (CBOR Object Signing and Encryption)](https://tools.ietf.org/html/rfc8152)
-
-## Support
-
-For issues, questions, or contributions, please open an issue on the GitHub repository.
+- FIDO Alliance CXF Specification (v1.0 WD 20240522)
+- FIDO2 WebAuthn Specification
+- COSE (CBOR Object Signing and Encryption)

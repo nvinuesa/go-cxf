@@ -74,6 +74,54 @@ func TestUnmarshalHeaderCBOR(t *testing.T) {
 	}
 }
 
+func TestHeaderMarshalCBORWithWiFiAndSSHRoundTrip(t *testing.T) {
+	wifi := json.RawMessage(`{"type":"wifi","ssid":{"fieldType":"string","value":"MyWiFi"},"security":{"fieldType":"wifi-network-security-type","value":"wpa2"},"password":{"fieldType":"concealed-string","value":"secret"},"hidden":{"fieldType":"boolean","value":false}}`)
+	ssh := json.RawMessage(`{"type":"ssh-key","privateKey":{"fieldType":"concealed-string","value":"PRIVATE"},"publicKey":{"fieldType":"string","value":"PUBLIC"},"keyType":{"fieldType":"string","value":"ed25519"},"comment":{"fieldType":"string","value":"work"}}`)
+
+	item := Item{
+		ID:          "aXRlbS0y",
+		Title:       "WiFi+SSH",
+		Credentials: []json.RawMessage{wifi, ssh},
+	}
+	account := Account{
+		ID:       "YWNjb3VudC0y",
+		Username: "user2",
+		Email:    "user2@example.com",
+		Items:    []Item{item},
+	}
+	h := &Header{
+		Version: Version{
+			Major: VersionMajor,
+			Minor: VersionMinor,
+		},
+		ExporterRpId:        "exporter.example.com",
+		ExporterDisplayName: "Exporter",
+		Timestamp:           1710000001,
+		Accounts:            []Account{account},
+	}
+
+	data, err := MarshalHeaderCBOR(h)
+	if err != nil {
+		t.Fatalf("MarshalHeaderCBOR() error = %v", err)
+	}
+
+	restored, err := UnmarshalHeaderCBOR(data)
+	if err != nil {
+		t.Fatalf("UnmarshalHeaderCBOR() error = %v", err)
+	}
+
+	if err := restored.Validate(); err != nil {
+		t.Fatalf("restored header validation failed: %v", err)
+	}
+
+	if len(restored.Accounts) != 1 || len(restored.Accounts[0].Items) != 1 {
+		t.Fatalf("accounts/items mismatch after round trip")
+	}
+	if len(restored.Accounts[0].Items[0].Credentials) != 2 {
+		t.Fatalf("expected two credentials after round trip")
+	}
+}
+
 func TestUnmarshalHeaderCBORInvalid(t *testing.T) {
 	invalid := []byte{0xff, 0xff, 0xff}
 	if _, err := UnmarshalHeaderCBOR(invalid); err == nil {

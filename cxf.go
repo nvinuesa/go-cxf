@@ -5,6 +5,7 @@ import (
 	"crypto/sha256"
 	"encoding/json"
 	"errors"
+	"time"
 )
 
 const (
@@ -144,6 +145,56 @@ var validFieldTypes = map[string]struct{}{
 	FieldTypeSubdivisionCode:     {},
 }
 
+var allowedWifiNetworkSecurity = map[string]struct{}{
+	"open": {},
+	"wep":  {},
+	"wpa":  {},
+	"wpa2": {},
+	"wpa3": {},
+}
+
+func validateDateString(s string) bool {
+	if s == "" {
+		return false
+	}
+	_, err := time.Parse("2006-01-02", s)
+	return err == nil
+}
+
+func validateYearMonthString(s string) bool {
+	if s == "" {
+		return false
+	}
+	_, err := time.Parse("2006-01", s)
+	return err == nil
+}
+
+func validateCountryCodeString(s string) bool {
+	if len(s) != 2 {
+		return false
+	}
+	for i := 0; i < 2; i++ {
+		c := s[i]
+		if c < 'A' || c > 'Z' {
+			return false
+		}
+	}
+	return true
+}
+
+func validateSubdivisionCodeString(s string) bool {
+	if len(s) < 4 {
+		return false
+	}
+	dash := 0
+	for i := 0; i < len(s); i++ {
+		if s[i] == '-' {
+			dash++
+		}
+	}
+	return dash == 1
+}
+
 // ValidateEditableField enforces field type and value constraints for an editable field.
 func ValidateEditableField(f EditableField) error {
 	if f.FieldType == "" || len(f.Value) == 0 {
@@ -183,6 +234,28 @@ func ValidateEditableField(f EditableField) error {
 		var s string
 		if err := json.Unmarshal(f.Value, &s); err != nil {
 			return ErrInvalidFieldValue
+		}
+		switch f.FieldType {
+		case FieldTypeDate:
+			if !validateDateString(s) {
+				return ErrInvalidFieldValue
+			}
+		case FieldTypeYearMonth:
+			if !validateYearMonthString(s) {
+				return ErrInvalidFieldValue
+			}
+		case FieldTypeCountryCode:
+			if !validateCountryCodeString(s) {
+				return ErrInvalidFieldValue
+			}
+		case FieldTypeSubdivisionCode:
+			if !validateSubdivisionCodeString(s) {
+				return ErrInvalidFieldValue
+			}
+		case FieldTypeWifiNetworkSecurity:
+			if _, ok := allowedWifiNetworkSecurity[s]; !ok {
+				return ErrInvalidFieldValue
+			}
 		}
 	}
 
