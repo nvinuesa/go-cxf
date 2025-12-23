@@ -75,8 +75,8 @@ func TestUnmarshalHeaderCBOR(t *testing.T) {
 }
 
 func TestHeaderMarshalCBORWithWiFiAndSSHRoundTrip(t *testing.T) {
-	wifi := json.RawMessage(`{"type":"wifi","ssid":{"fieldType":"string","value":"MyWiFi"},"security":{"fieldType":"wifi-network-security-type","value":"wpa2"},"password":{"fieldType":"concealed-string","value":"secret"},"hidden":{"fieldType":"boolean","value":false}}`)
-	ssh := json.RawMessage(`{"type":"ssh-key","privateKey":{"fieldType":"concealed-string","value":"PRIVATE"},"publicKey":{"fieldType":"string","value":"PUBLIC"},"keyType":{"fieldType":"string","value":"ed25519"},"comment":{"fieldType":"string","value":"work"}}`)
+	wifi := json.RawMessage(`{"type":"wifi","ssid":{"fieldType":"string","value":"MyWiFi"},"networkSecurityType":{"fieldType":"wifi-network-security-type","value":"wpa2-personal"},"passphrase":{"fieldType":"concealed-string","value":"secret"},"hidden":{"fieldType":"boolean","value":false}}`)
+	ssh := json.RawMessage(`{"type":"ssh-key","keyType":"ssh-ed25519","privateKey":"` + EncodeBase64URL([]byte("PRIVATE-KEY-DATA")) + `","keyComment":"work"}`)
 
 	item := Item{
 		ID:          "aXRlbS0y",

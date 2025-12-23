@@ -146,12 +146,21 @@ var validFieldTypes = map[string]struct{}{
 }
 
 var allowedWifiNetworkSecurity = map[string]struct{}{
-	"open": {},
-	"wep":  {},
-	"wpa":  {},
-	"wpa2": {},
-	"wpa3": {},
+	"unsecured":     {},
+	"wep":           {},
+	"wpa-personal":  {},
+	"wpa2-personal": {},
+	"wpa3-personal": {},
 }
+
+// WiFi security type constants.
+const (
+	WifiSecurityUnsecured    = "unsecured"
+	WifiSecurityWEP          = "wep"
+	WifiSecurityWPAPersonal  = "wpa-personal"
+	WifiSecurityWPA2Personal = "wpa2-personal"
+	WifiSecurityWPA3Personal = "wpa3-personal"
+)
 
 func validateDateString(s string) bool {
 	if s == "" {
@@ -339,80 +348,91 @@ type GeneratedPasswordCredential struct {
 }
 
 type PersonNameCredential struct {
-	Type            string         `json:"type"`
-	FullName        *EditableField `json:"fullName,omitempty"`
-	GivenName       *EditableField `json:"givenName,omitempty"`
-	MiddleName      *EditableField `json:"middleName,omitempty"`
-	FamilyName      *EditableField `json:"familyName,omitempty"`
-	HonorificPrefix *EditableField `json:"honorificPrefix,omitempty"`
-	HonorificSuffix *EditableField `json:"honorificSuffix,omitempty"`
+	Type          string         `json:"type"`
+	Title         *EditableField `json:"title,omitempty"`
+	Given         *EditableField `json:"given,omitempty"`
+	GivenInformal *EditableField `json:"givenInformal,omitempty"`
+	Given2        *EditableField `json:"given2,omitempty"`
+	SurnamePrefix *EditableField `json:"surnamePrefix,omitempty"`
+	Surname       *EditableField `json:"surname,omitempty"`
+	Surname2      *EditableField `json:"surname2,omitempty"`
+	Credentials   *EditableField `json:"credentials,omitempty"`
+	Generation    *EditableField `json:"generation,omitempty"`
 }
 
 type IdentityDocumentCredential struct {
-	Type             string         `json:"type"`
-	DocumentNumber   *EditableField `json:"documentNumber,omitempty"`
-	FullName         *EditableField `json:"fullName,omitempty"`
-	GivenName        *EditableField `json:"givenName,omitempty"`
-	FamilyName       *EditableField `json:"familyName,omitempty"`
-	IssueDate        *EditableField `json:"issueDate,omitempty"`
-	ValidFrom        *EditableField `json:"validFrom,omitempty"`
-	ExpiryDate       *EditableField `json:"expiryDate,omitempty"`
-	IssuingCountry   *EditableField `json:"issuingCountry,omitempty"`
-	IssuingAuthority *EditableField `json:"issuingAuthority,omitempty"`
+	Type                 string         `json:"type"`
+	IssuingCountry       *EditableField `json:"issuingCountry,omitempty"`
+	DocumentNumber       *EditableField `json:"documentNumber,omitempty"`
+	IdentificationNumber *EditableField `json:"identificationNumber,omitempty"`
+	Nationality          *EditableField `json:"nationality,omitempty"`
+	FullName             *EditableField `json:"fullName,omitempty"`
+	BirthDate            *EditableField `json:"birthDate,omitempty"`
+	BirthPlace           *EditableField `json:"birthPlace,omitempty"`
+	Sex                  *EditableField `json:"sex,omitempty"`
+	IssueDate            *EditableField `json:"issueDate,omitempty"`
+	ExpiryDate           *EditableField `json:"expiryDate,omitempty"`
+	IssuingAuthority     *EditableField `json:"issuingAuthority,omitempty"`
 }
 
 type DriversLicenseCredential struct {
 	Type             string         `json:"type"`
-	DocumentNumber   *EditableField `json:"documentNumber,omitempty"`
 	FullName         *EditableField `json:"fullName,omitempty"`
-	GivenName        *EditableField `json:"givenName,omitempty"`
-	FamilyName       *EditableField `json:"familyName,omitempty"`
+	BirthDate        *EditableField `json:"birthDate,omitempty"`
 	IssueDate        *EditableField `json:"issueDate,omitempty"`
-	ValidFrom        *EditableField `json:"validFrom,omitempty"`
 	ExpiryDate       *EditableField `json:"expiryDate,omitempty"`
-	IssuingCountry   *EditableField `json:"issuingCountry,omitempty"`
 	IssuingAuthority *EditableField `json:"issuingAuthority,omitempty"`
+	Territory        *EditableField `json:"territory,omitempty"`
+	Country          *EditableField `json:"country,omitempty"`
+	LicenseNumber    *EditableField `json:"licenseNumber,omitempty"`
+	LicenseClass     *EditableField `json:"licenseClass,omitempty"`
 }
 
 type PassportCredential struct {
-	Type             string         `json:"type"`
-	DocumentNumber   *EditableField `json:"documentNumber,omitempty"`
-	FullName         *EditableField `json:"fullName,omitempty"`
-	GivenName        *EditableField `json:"givenName,omitempty"`
-	FamilyName       *EditableField `json:"familyName,omitempty"`
-	IssueDate        *EditableField `json:"issueDate,omitempty"`
-	ValidFrom        *EditableField `json:"validFrom,omitempty"`
-	ExpiryDate       *EditableField `json:"expiryDate,omitempty"`
-	IssuingCountry   *EditableField `json:"issuingCountry,omitempty"`
-	IssuingAuthority *EditableField `json:"issuingAuthority,omitempty"`
+	Type                         string         `json:"type"`
+	IssuingCountry               *EditableField `json:"issuingCountry,omitempty"`
+	PassportType                 *EditableField `json:"passportType,omitempty"`
+	PassportNumber               *EditableField `json:"passportNumber,omitempty"`
+	NationalIdentificationNumber *EditableField `json:"nationalIdentificationNumber,omitempty"`
+	Nationality                  *EditableField `json:"nationality,omitempty"`
+	FullName                     *EditableField `json:"fullName,omitempty"`
+	BirthDate                    *EditableField `json:"birthDate,omitempty"`
+	BirthPlace                   *EditableField `json:"birthPlace,omitempty"`
+	Sex                          *EditableField `json:"sex,omitempty"`
+	IssueDate                    *EditableField `json:"issueDate,omitempty"`
+	ExpiryDate                   *EditableField `json:"expiryDate,omitempty"`
+	IssuingAuthority             *EditableField `json:"issuingAuthority,omitempty"`
 }
 
 type CustomFieldsCredential struct {
-	Type   string          `json:"type"`
-	Fields []EditableField `json:"fields"`
+	Type       string          `json:"type"`
+	ID         string          `json:"id,omitempty"`
+	Label      string          `json:"label,omitempty"`
+	Fields     []EditableField `json:"fields"`
+	Extensions []Extension     `json:"extensions,omitempty"`
 }
 
 type SSHKeyCredential struct {
-	Type       string         `json:"type"`
-	PrivateKey *EditableField `json:"privateKey,omitempty"`
-	PublicKey  *EditableField `json:"publicKey,omitempty"`
-	KeyType    *EditableField `json:"keyType,omitempty"`
-	Comment    *EditableField `json:"comment,omitempty"`
-	Passphrase *EditableField `json:"passphrase,omitempty"`
+	Type                string         `json:"type"`
+	KeyType             string         `json:"keyType"`
+	PrivateKey          string         `json:"privateKey"`
+	KeyComment          string         `json:"keyComment,omitempty"`
+	CreationDate        *EditableField `json:"creationDate,omitempty"`
+	ExpiryDate          *EditableField `json:"expiryDate,omitempty"`
+	KeyGenerationSource *EditableField `json:"keyGenerationSource,omitempty"`
 }
 
 type WiFiCredential struct {
-	Type     string         `json:"type"`
-	SSID     *EditableField `json:"ssid,omitempty"`
-	Security *EditableField `json:"security,omitempty"`
-	Password *EditableField `json:"password,omitempty"`
-	Hidden   *EditableField `json:"hidden,omitempty"`
+	Type                string         `json:"type"`
+	SSID                *EditableField `json:"ssid,omitempty"`
+	NetworkSecurityType *EditableField `json:"networkSecurityType,omitempty"`
+	Passphrase          *EditableField `json:"passphrase,omitempty"`
+	Hidden              *EditableField `json:"hidden,omitempty"`
 }
 
 type ItemReferenceCredential struct {
-	Type      string `json:"type"`
-	ItemID    string `json:"itemId"`
-	AccountID string `json:"accountId,omitempty"`
+	Type      string     `json:"type"`
+	Reference LinkedItem `json:"reference"`
 }
 
 // BasicAuth credential schema.
@@ -594,7 +614,7 @@ func ValidatePersonNameCredential(c PersonNameCredential) error {
 	if c.Type != CredentialTypePersonName {
 		return ErrInvalidCredentialType
 	}
-	fields := []*EditableField{c.FullName, c.GivenName, c.MiddleName, c.FamilyName, c.HonorificPrefix, c.HonorificSuffix}
+	fields := []*EditableField{c.Title, c.Given, c.GivenInformal, c.Given2, c.SurnamePrefix, c.Surname, c.Surname2, c.Credentials, c.Generation}
 	present := false
 	for _, f := range fields {
 		if f == nil {
@@ -615,22 +635,33 @@ func ValidateIdentityDocumentCredential(c IdentityDocumentCredential) error {
 	if c.Type != CredentialTypeIdentityDocument {
 		return ErrInvalidCredentialType
 	}
-	fields := []*EditableField{c.DocumentNumber, c.FullName, c.GivenName, c.FamilyName, c.IssueDate, c.ValidFrom, c.ExpiryDate, c.IssuingCountry, c.IssuingAuthority}
+	// Validate fields by type
 	present := false
-	for idx, f := range fields {
-		if f == nil {
-			continue
+	// Country code fields
+	for _, f := range []*EditableField{c.IssuingCountry} {
+		if f != nil {
+			present = true
+			if err := ValidateEditableFieldWithExpectedType(*f, FieldTypeCountryCode); err != nil {
+				return err
+			}
 		}
-		present = true
-		expected := FieldTypeString
-		switch idx {
-		case 4, 5, 6:
-			expected = FieldTypeDate
-		case 7:
-			expected = FieldTypeCountryCode
+	}
+	// Date fields
+	for _, f := range []*EditableField{c.BirthDate, c.IssueDate, c.ExpiryDate} {
+		if f != nil {
+			present = true
+			if err := ValidateEditableFieldWithExpectedType(*f, FieldTypeDate); err != nil {
+				return err
+			}
 		}
-		if err := ValidateEditableFieldWithExpectedType(*f, expected); err != nil {
-			return err
+	}
+	// String fields
+	for _, f := range []*EditableField{c.DocumentNumber, c.IdentificationNumber, c.Nationality, c.FullName, c.BirthPlace, c.Sex, c.IssuingAuthority} {
+		if f != nil {
+			present = true
+			if err := ValidateEditableFieldWithExpectedType(*f, FieldTypeString); err != nil {
+				return err
+			}
 		}
 	}
 	if !present {
@@ -643,22 +674,37 @@ func ValidateDriversLicenseCredential(c DriversLicenseCredential) error {
 	if c.Type != CredentialTypeDriversLicense {
 		return ErrInvalidCredentialType
 	}
-	fields := []*EditableField{c.DocumentNumber, c.FullName, c.GivenName, c.FamilyName, c.IssueDate, c.ValidFrom, c.ExpiryDate, c.IssuingCountry, c.IssuingAuthority}
 	present := false
-	for idx, f := range fields {
-		if f == nil {
-			continue
-		}
+	// Country code fields
+	if c.Country != nil {
 		present = true
-		expected := FieldTypeString
-		switch idx {
-		case 4, 5, 6:
-			expected = FieldTypeDate
-		case 7:
-			expected = FieldTypeCountryCode
-		}
-		if err := ValidateEditableFieldWithExpectedType(*f, expected); err != nil {
+		if err := ValidateEditableFieldWithExpectedType(*c.Country, FieldTypeCountryCode); err != nil {
 			return err
+		}
+	}
+	// Subdivision code fields
+	if c.Territory != nil {
+		present = true
+		if err := ValidateEditableFieldWithExpectedType(*c.Territory, FieldTypeSubdivisionCode); err != nil {
+			return err
+		}
+	}
+	// Date fields
+	for _, f := range []*EditableField{c.BirthDate, c.IssueDate, c.ExpiryDate} {
+		if f != nil {
+			present = true
+			if err := ValidateEditableFieldWithExpectedType(*f, FieldTypeDate); err != nil {
+				return err
+			}
+		}
+	}
+	// String fields
+	for _, f := range []*EditableField{c.FullName, c.IssuingAuthority, c.LicenseNumber, c.LicenseClass} {
+		if f != nil {
+			present = true
+			if err := ValidateEditableFieldWithExpectedType(*f, FieldTypeString); err != nil {
+				return err
+			}
 		}
 	}
 	if !present {
@@ -671,22 +717,30 @@ func ValidatePassportCredential(c PassportCredential) error {
 	if c.Type != CredentialTypePassport {
 		return ErrInvalidCredentialType
 	}
-	fields := []*EditableField{c.DocumentNumber, c.FullName, c.GivenName, c.FamilyName, c.IssueDate, c.ValidFrom, c.ExpiryDate, c.IssuingCountry, c.IssuingAuthority}
 	present := false
-	for idx, f := range fields {
-		if f == nil {
-			continue
-		}
+	// Country code fields
+	if c.IssuingCountry != nil {
 		present = true
-		expected := FieldTypeString
-		switch idx {
-		case 4, 5, 6:
-			expected = FieldTypeDate
-		case 7:
-			expected = FieldTypeCountryCode
-		}
-		if err := ValidateEditableFieldWithExpectedType(*f, expected); err != nil {
+		if err := ValidateEditableFieldWithExpectedType(*c.IssuingCountry, FieldTypeCountryCode); err != nil {
 			return err
+		}
+	}
+	// Date fields
+	for _, f := range []*EditableField{c.BirthDate, c.IssueDate, c.ExpiryDate} {
+		if f != nil {
+			present = true
+			if err := ValidateEditableFieldWithExpectedType(*f, FieldTypeDate); err != nil {
+				return err
+			}
+		}
+	}
+	// String fields
+	for _, f := range []*EditableField{c.PassportType, c.PassportNumber, c.NationalIdentificationNumber, c.Nationality, c.FullName, c.BirthPlace, c.Sex, c.IssuingAuthority} {
+		if f != nil {
+			present = true
+			if err := ValidateEditableFieldWithExpectedType(*f, FieldTypeString); err != nil {
+				return err
+			}
 		}
 	}
 	if !present {
@@ -699,6 +753,11 @@ func ValidateCustomFieldsCredential(c CustomFieldsCredential) error {
 	if c.Type != CredentialTypeCustomFields {
 		return ErrInvalidCredentialType
 	}
+	if c.ID != "" {
+		if err := ValidateIdentifier(c.ID); err != nil {
+			return err
+		}
+	}
 	if len(c.Fields) == 0 {
 		return ErrMissingFields
 	}
@@ -709,36 +768,27 @@ func ValidateSSHKeyCredential(c SSHKeyCredential) error {
 	if c.Type != CredentialTypeSSHKey {
 		return ErrInvalidCredentialType
 	}
-	present := false
-	if c.PrivateKey != nil {
-		present = true
-		if err := ValidateEditableFieldWithExpectedType(*c.PrivateKey, FieldTypeConcealedString); err != nil {
-			return err
-		}
-	}
-	if c.PublicKey != nil {
-		present = true
-		if err := ValidateEditableFieldWithExpectedType(*c.PublicKey, FieldTypeString); err != nil {
-			return err
-		}
-	}
-	if c.KeyType != nil {
-		if err := ValidateEditableFieldWithExpectedType(*c.KeyType, FieldTypeString); err != nil {
-			return err
-		}
-	}
-	if c.Comment != nil {
-		if err := ValidateEditableFieldWithExpectedType(*c.Comment, FieldTypeString); err != nil {
-			return err
-		}
-	}
-	if c.Passphrase != nil {
-		if err := ValidateEditableFieldWithExpectedType(*c.Passphrase, FieldTypeConcealedString); err != nil {
-			return err
-		}
-	}
-	if !present {
+	// keyType and privateKey are required
+	if c.KeyType == "" || c.PrivateKey == "" {
 		return ErrMissingFields
+	}
+	// privateKey must be valid base64url
+	if err := ValidateBase64URL(c.PrivateKey); err != nil {
+		return ErrInvalidCredential
+	}
+	// Optional date fields
+	for _, f := range []*EditableField{c.CreationDate, c.ExpiryDate} {
+		if f != nil {
+			if err := ValidateEditableFieldWithExpectedType(*f, FieldTypeDate); err != nil {
+				return err
+			}
+		}
+	}
+	// Optional string field
+	if c.KeyGenerationSource != nil {
+		if err := ValidateEditableFieldWithExpectedType(*c.KeyGenerationSource, FieldTypeString); err != nil {
+			return err
+		}
 	}
 	return nil
 }
@@ -747,19 +797,18 @@ func ValidateWiFiCredential(c WiFiCredential) error {
 	if c.Type != CredentialTypeWiFi {
 		return ErrInvalidCredentialType
 	}
-	if c.SSID == nil {
-		return ErrMissingFields
-	}
-	if err := ValidateEditableFieldWithExpectedType(*c.SSID, FieldTypeString); err != nil {
-		return err
-	}
-	if c.Security != nil {
-		if err := ValidateEditableFieldWithExpectedType(*c.Security, FieldTypeWifiNetworkSecurity); err != nil {
+	if c.SSID != nil {
+		if err := ValidateEditableFieldWithExpectedType(*c.SSID, FieldTypeString); err != nil {
 			return err
 		}
 	}
-	if c.Password != nil {
-		if err := ValidateEditableFieldWithExpectedType(*c.Password, FieldTypeConcealedString); err != nil {
+	if c.NetworkSecurityType != nil {
+		if err := ValidateEditableFieldWithExpectedType(*c.NetworkSecurityType, FieldTypeWifiNetworkSecurity); err != nil {
+			return err
+		}
+	}
+	if c.Passphrase != nil {
+		if err := ValidateEditableFieldWithExpectedType(*c.Passphrase, FieldTypeConcealedString); err != nil {
 			return err
 		}
 	}
@@ -775,14 +824,14 @@ func ValidateItemReferenceCredential(c ItemReferenceCredential) error {
 	if c.Type != CredentialTypeItemReference {
 		return ErrInvalidCredentialType
 	}
-	if c.ItemID == "" {
+	if c.Reference.Item == "" {
 		return ErrMissingFields
 	}
-	if err := ValidateIdentifier(c.ItemID); err != nil {
+	if err := ValidateIdentifier(c.Reference.Item); err != nil {
 		return err
 	}
-	if c.AccountID != "" {
-		if err := ValidateIdentifier(c.AccountID); err != nil {
+	if c.Reference.Account != "" {
+		if err := ValidateIdentifier(c.Reference.Account); err != nil {
 			return err
 		}
 	}
@@ -1059,7 +1108,9 @@ func ValidateCredential(raw json.RawMessage) error {
 		}
 		return ValidateNoteCredential(c)
 	default:
-		return ErrInvalidCredentialType
+		// Per spec: "Importing providers MAY attempt to store unknown credential types"
+		// Unknown credential types are passed through without error
+		return nil
 	}
 }
 

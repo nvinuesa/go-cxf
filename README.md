@@ -1,6 +1,8 @@
 # go-cxf
 
-A Go library implementing the FIDO Alliance Credential Exchange Format (CXF) v1.0.
+A Go library implementing the FIDO Alliance Credential Exchange Format (CXF) v1.0 (draft https://fidoalliance.org/specs/cx/cxf-v1.0-rd-20250313.html).
+
+[![CI](https://github.com/nvinuesa/go-cxf/actions/workflows/ci.yml/badge.svg)](https://github.com/nvinuesa/go-cxf/actions/workflows/ci.yml)
 
 ## Overview
 
@@ -91,6 +93,8 @@ Implemented and validated:
 - `wifi`
 - `item-reference`
 
+Unknown credential types are passed through without error, per the CXF specification.
+
 ## Editable field types and constraints
 
 - `string`, `concealed-string`, `email`
@@ -98,7 +102,7 @@ Implemented and validated:
 - `boolean`
 - `date` (YYYY-MM-DD, `time.Parse("2006-01-02", s)`)
 - `year-month` (YYYY-MM, `time.Parse("2006-01", s)`)
-- `wifi-network-security-type` (one of: open, wep, wpa, wpa2, wpa3)
+- `wifi-network-security-type` (one of: unsecured, wep, wpa-personal, wpa2-personal, wpa3-personal)
 - `country-code` (exactly 2 uppercase ASCII letters)
 - `subdivision-code` (must contain one dash, e.g., US-CA)
 
@@ -114,13 +118,17 @@ All editable fields must include `fieldType` and non-empty `value`; optional `id
   - Passkey: ids/handles/keys base64url; HMAC secrets decode to 32 bytes; largeBlob data base64url.
   - File: id base64url; integrityHash base64url; name non-empty; decryptedSize > 0.
   - Credit card: expiry/validFrom are `year-month`; number/CVV/PIN are `concealed-string`.
-  - WiFi: ssid required; security allowed set; password `concealed-string`; hidden `boolean`.
+  - WiFi: networkSecurityType must be valid; passphrase `concealed-string`; hidden `boolean`.
   - Address: country is `country-code`; territory is `subdivision-code`.
-  - Identity/Driver/Passport: date fields are `date`; issuingCountry is `country-code`.
+  - Identity document: includes birthDate, birthPlace, sex, identificationNumber, nationality fields.
+  - Driver's license: includes birthDate, territory (subdivision-code), licenseNumber, licenseClass.
+  - Passport: includes passportNumber, passportType, birthDate, birthPlace, sex, nationality.
+  - Person name: uses title, given, givenInformal, given2, surnamePrefix, surname, surname2, credentials, generation.
   - API key: date fields are `date`; key is `concealed-string`.
-  - SSH key: requires at least a private or public key; passphrase `concealed-string`.
-  - Item reference: itemId/accountId are base64url ids.
+  - SSH key: requires `keyType` and `privateKey` (base64url PKCS#8 DER); optional keyComment, creationDate, expiryDate.
+  - Item reference: uses `reference` containing a LinkedItem with item/account IDs.
   - Generated password: password non-empty plain string.
+  - Custom fields: supports optional id, label, and extensions.
 
 Use `ValidateCredential` or `ValidateCredentials` for individual checks; `Header.Validate()` walks the full tree.
 
@@ -137,11 +145,49 @@ Use `ValidateCredential` or `ValidateCredentials` for individual checks; `Header
 - `GenerateIdentifier` (alias: `GenerateCredentialID`, `GenerateUserID`) produce base64url ids of given length (<=64 decoded bytes).
 - `ValidateIdentifier` ensures base64url and length <= 64 decoded bytes.
 
-## Testing & CI
+## Development
 
-- Local: `go test ./...`
-- Formatting: `gofmt -w .`
-- CI: GitHub Actions runs gofmt (fail on diff), `go vet ./...`, and `go test ./...` on push/PR (Go 1.21).
+### Using Make
+
+```bash
+# Run all checks (format, vet, test)
+make
+
+# Run tests
+make test
+
+# Run tests with coverage
+make test-coverage
+
+# Format code
+make fmt
+
+# Run linting (go vet)
+make vet
+
+# Clean build artifacts
+make clean
+
+# Show all available targets
+make help
+```
+
+### Manual commands
+
+```bash
+# Run tests
+go test ./...
+
+# Format code
+gofmt -w .
+
+# Run vet
+go vet ./...
+```
+
+### CI
+
+GitHub Actions runs format check, `go vet`, and tests on push/PR to main.
 
 ## Project structure
 
@@ -153,12 +199,18 @@ Use `ValidateCredential` or `ValidateCredentials` for individual checks; `Header
 ├── cbor_test.go    # CBOR round-trip tests
 ├── utils.go        # Base64/Base32 and ID utilities
 ├── utils_test.go   # Utility tests
+├── Makefile        # Build automation
 ├── examples/       # Example programs
 └── README.md       # This file
 ```
 
 ## References
 
-- FIDO Alliance CXF Specification (v1.0 WD 20240522)
+- [FIDO Alliance CXF Specification (v1.0 RD 20250313)](https://fidoalliance.org/specs/cx/cxf-v1.0-rd-20250313.html)
+- [Bitwarden Credential Exchange Reference Implementation](https://github.com/bitwarden/credential-exchange)
 - FIDO2 WebAuthn Specification
 - COSE (CBOR Object Signing and Encryption)
+
+## License
+
+See [LICENSE](LICENSE) file.
