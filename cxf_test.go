@@ -137,3 +137,71 @@ func TestHeaderJSONRoundTrip(t *testing.T) {
 		t.Fatalf("accounts/items mismatch after round trip")
 	}
 }
+
+func TestValidateEditableFieldBoolean(t *testing.T) {
+	f := EditableField{FieldType: FieldTypeBoolean, Value: json.RawMessage("true")}
+	if err := ValidateEditableField(f); err != nil {
+		t.Fatalf("expected boolean field to be valid, got %v", err)
+	}
+
+	f.Value = json.RawMessage("\"notbool\"")
+	if err := ValidateEditableField(f); err != ErrInvalidFieldValue {
+		t.Fatalf("expected ErrInvalidFieldValue for non-boolean, got %v", err)
+	}
+}
+
+func TestValidateEditableFieldNumber(t *testing.T) {
+	f := EditableField{FieldType: FieldTypeNumber, Value: json.RawMessage("123.45")}
+	if err := ValidateEditableField(f); err != nil {
+		t.Fatalf("expected number field to be valid, got %v", err)
+	}
+
+	f.Value = json.RawMessage("\"string\"")
+	if err := ValidateEditableField(f); err != ErrInvalidFieldValue {
+		t.Fatalf("expected ErrInvalidFieldValue for non-numeric, got %v", err)
+	}
+}
+
+func TestValidateEditableFieldInvalidType(t *testing.T) {
+	f := EditableField{FieldType: "unknown-type", Value: json.RawMessage("true")}
+	if err := ValidateEditableField(f); err != ErrInvalidFieldType {
+		t.Fatalf("expected ErrInvalidFieldType, got %v", err)
+	}
+}
+
+func TestValidateEditableFieldMissingValue(t *testing.T) {
+	f := EditableField{FieldType: FieldTypeString, Value: json.RawMessage("")}
+	if err := ValidateEditableField(f); err != ErrMissingFields {
+		t.Fatalf("expected ErrMissingFields for empty value, got %v", err)
+	}
+}
+
+func TestValidateEditableFieldInvalidID(t *testing.T) {
+	f := EditableField{ID: "not-base64url", FieldType: FieldTypeString, Value: json.RawMessage("\"ok\"")}
+	if err := ValidateEditableField(f); err == nil {
+		t.Fatalf("expected error for invalid id")
+	}
+}
+
+func TestValidateEditableFieldsStopsOnError(t *testing.T) {
+	fields := []EditableField{
+		{FieldType: FieldTypeBoolean, Value: json.RawMessage("false")},
+		{FieldType: "bad-type", Value: json.RawMessage("true")},
+		{FieldType: FieldTypeNumber, Value: json.RawMessage("10")},
+	}
+	if err := ValidateEditableFields(fields); err != ErrInvalidFieldType {
+		t.Fatalf("expected ErrInvalidFieldType, got %v", err)
+	}
+}
+
+func TestValidateEditableFieldStringTypes(t *testing.T) {
+	f := EditableField{FieldType: FieldTypeString, Value: json.RawMessage("\"hello\"")}
+	if err := ValidateEditableField(f); err != nil {
+		t.Fatalf("expected string field to be valid, got %v", err)
+	}
+
+	f.Value = json.RawMessage("123") // not a JSON string, should fail
+	if err := ValidateEditableField(f); err != ErrInvalidFieldValue {
+		t.Fatalf("expected ErrInvalidFieldValue for non-string value, got %v", err)
+	}
+}

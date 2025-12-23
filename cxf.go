@@ -1,6 +1,7 @@
 package cxf
 
 import (
+	"bytes"
 	"encoding/json"
 	"errors"
 )
@@ -14,12 +15,14 @@ const (
 
 // Common validation errors.
 var (
-	ErrInvalidVersion  = errors.New("invalid CXF version")
-	ErrInvalidFormat   = errors.New("invalid CXF format")
-	ErrMissingAccount  = errors.New("missing account")
-	ErrMissingItem     = errors.New("missing item")
-	ErrMissingFields   = errors.New("missing required fields")
-	ErrInvalidIDLength = errors.New("identifier exceeds 64 bytes")
+	ErrInvalidVersion    = errors.New("invalid CXF version")
+	ErrInvalidFormat     = errors.New("invalid CXF format")
+	ErrMissingAccount    = errors.New("missing account")
+	ErrMissingItem       = errors.New("missing item")
+	ErrMissingFields     = errors.New("missing required fields")
+	ErrInvalidIDLength   = errors.New("identifier exceeds 64 bytes")
+	ErrInvalidFieldType  = errors.New("invalid editable field type")
+	ErrInvalidFieldValue = errors.New("invalid editable field value for type")
 )
 
 // Version encodes the CXF version information.
@@ -104,11 +107,11 @@ type AndroidAppCertificateFingerprint struct {
 
 // EditableField represents a user-editable field with a type.
 type EditableField struct {
-	ID         string      `json:"id,omitempty"`
-	FieldType  string      `json:"fieldType"`
-	Value      string      `json:"value"`
-	Label      string      `json:"label,omitempty"`
-	Extensions []Extension `json:"extensions,omitempty"`
+	ID         string          `json:"id,omitempty"`
+	FieldType  string          `json:"fieldType"`
+	Value      json.RawMessage `json:"value"`
+	Label      string          `json:"label,omitempty"`
+	Extensions []Extension     `json:"extensions,omitempty"`
 }
 
 // FieldType is an enumeration of supported field types.
@@ -124,6 +127,74 @@ const (
 	FieldTypeCountryCode         = "country-code"
 	FieldTypeSubdivisionCode     = "subdivision-code"
 )
+
+var validFieldTypes = map[string]struct{}{
+	FieldTypeString:              {},
+	FieldTypeConcealedString:     {},
+	FieldTypeEmail:               {},
+	FieldTypeNumber:              {},
+	FieldTypeBoolean:             {},
+	FieldTypeDate:                {},
+	FieldTypeYearMonth:           {},
+	FieldTypeWifiNetworkSecurity: {},
+	FieldTypeCountryCode:         {},
+	FieldTypeSubdivisionCode:     {},
+}
+
+// ValidateEditableField enforces field type and value constraints for an editable field.
+func ValidateEditableField(f EditableField) error {
+	if f.FieldType == "" || len(f.Value) == 0 {
+		return ErrMissingFields
+	}
+	if _, ok := validFieldTypes[f.FieldType]; !ok {
+		return ErrInvalidFieldType
+	}
+	if f.ID != "" {
+		if err := ValidateIdentifier(f.ID); err != nil {
+			return err
+		}
+	}
+
+	switch f.FieldType {
+	case FieldTypeBoolean:
+		var v bool
+		if err := json.Unmarshal(f.Value, &v); err != nil {
+			return ErrInvalidFieldValue
+		}
+	case FieldTypeNumber:
+		dec := json.NewDecoder(bytes.NewReader(f.Value))
+		dec.UseNumber()
+		var v interface{}
+		if err := dec.Decode(&v); err != nil {
+			return ErrInvalidFieldValue
+		}
+		switch n := v.(type) {
+		case json.Number:
+			if _, err := n.Float64(); err != nil {
+				return ErrInvalidFieldValue
+			}
+		default:
+			return ErrInvalidFieldValue
+		}
+	default:
+		var s string
+		if err := json.Unmarshal(f.Value, &s); err != nil {
+			return ErrInvalidFieldValue
+		}
+	}
+
+	return nil
+}
+
+// ValidateEditableFields iterates validation across a slice of editable fields.
+func ValidateEditableFields(fields []EditableField) error {
+	for _, f := range fields {
+		if err := ValidateEditableField(f); err != nil {
+			return err
+		}
+	}
+	return nil
+}
 
 // Extension is a generic extension payload.
 type Extension struct {
