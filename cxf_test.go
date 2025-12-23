@@ -8,12 +8,12 @@ import (
 func makeMinimalHeader() *Header {
 	cred := json.RawMessage(`{"type":"note"}`)
 	item := Item{
-		ID:          "item-1",
+		ID:          "aXRlbS0x", // base64url("item-1")
 		Title:       "Test Item",
 		Credentials: []json.RawMessage{cred},
 	}
 	account := Account{
-		ID:       "account-1",
+		ID:       "YWNjb3VudC0x", // base64url("account-1")
 		Username: "user",
 		Email:    "user@example.com",
 		Items:    []Item{item},
@@ -61,9 +61,17 @@ func TestHeaderValidateMissingAccounts(t *testing.T) {
 	}
 }
 
+func TestHeaderValidateMissingTimestamp(t *testing.T) {
+	h := NewHeader("exp.example", "Exporter", 0)
+	err := h.Validate()
+	if err != ErrInvalidFormat {
+		t.Fatalf("expected ErrInvalidFormat for zero timestamp, got %v", err)
+	}
+}
+
 func TestAccountValidateMissingItems(t *testing.T) {
 	acc := Account{
-		ID:       "acc-1",
+		ID:       "YWNjb3VudC0x",
 		Username: "user",
 		Email:    "user@example.com",
 		Items:    []Item{},
@@ -82,7 +90,7 @@ func TestCollectionValidate(t *testing.T) {
 	if err := col.Validate(); err != ErrMissingFields {
 		t.Fatalf("expected ErrMissingFields, got %v", err)
 	}
-	col = Collection{ID: "c1", Title: "Title"}
+	col = Collection{ID: "Y29sMQ", Title: "Title"}
 	if err := col.Validate(); err != nil {
 		t.Fatalf("expected valid collection, got %v", err)
 	}
@@ -97,7 +105,7 @@ func TestItemValidate(t *testing.T) {
 		t.Fatalf("expected ErrMissingFields for missing ID/title, got %v", err)
 	}
 	item = Item{
-		ID:    "item-1",
+		ID:    "aXRlbS0x",
 		Title: "Item",
 	}
 	if err := item.Validate(); err != ErrMissingFields {

@@ -28,14 +28,14 @@ func buildExampleHeader() *cxf.Header {
 	now := uint64(time.Now().Unix())
 
 	item := cxf.Item{
-		ID:          "item-1",
+		ID:          "aXRlbS0x", // base64url("item-1")
 		Title:       "Sample Item",
 		Credentials: []json.RawMessage{noteCred},
 		Tags:        []string{"example", "note"},
 	}
 
 	account := cxf.Account{
-		ID:       "account-1",
+		ID:       "YWNjb3VudC0x", // base64url("account-1")
 		Username: "user",
 		Email:    "user@example.com",
 		Items:    []cxf.Item{item},

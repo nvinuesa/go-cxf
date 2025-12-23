@@ -1,238 +1,157 @@
 package cxf
 
 import (
+	"encoding/base32"
 	"encoding/base64"
 	"testing"
 )
 
-func TestGenerateCredentialID(t *testing.T) {
+func TestGenerateIdentifier(t *testing.T) {
 	tests := []struct {
-		name    string
-		length  int
-		wantErr bool
+		name      string
+		length    int
+		wantErr   error
+		expectLen int
 	}{
-		{
-			name:    "valid length 16",
-			length:  16,
-			wantErr: false,
-		},
-		{
-			name:    "valid length 32",
-			length:  32,
-			wantErr: false,
-		},
-		{
-			name:    "valid length 64",
-			length:  64,
-			wantErr: false,
-		},
-		{
-			name:    "zero length",
-			length:  0,
-			wantErr: true,
-		},
-		{
-			name:    "negative length",
-			length:  -1,
-			wantErr: true,
-		},
+		{name: "16 bytes", length: 16, wantErr: nil, expectLen: 16},
+		{name: "32 bytes", length: 32, wantErr: nil, expectLen: 32},
+		{name: "64 bytes max", length: 64, wantErr: nil, expectLen: 64},
+		{name: "zero length", length: 0, wantErr: ErrEmptyLength},
+		{name: "negative length", length: -1, wantErr: ErrEmptyLength},
+		{name: "exceeds max", length: 65, wantErr: ErrInvalidIdentifierLength},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			id, err := GenerateCredentialID(tt.length)
-
-			if (err != nil) != tt.wantErr {
-				t.Errorf("GenerateCredentialID() error = %v, wantErr %v", err, tt.wantErr)
+			id, err := GenerateIdentifier(tt.length)
+			if tt.wantErr != nil {
+				if err == nil || err.Error() != tt.wantErr.Error() {
+					t.Fatalf("GenerateIdentifier() error = %v, want %v", err, tt.wantErr)
+				}
 				return
 			}
-
-			if !tt.wantErr {
-				if id == "" {
-					t.Error("Expected non-empty credential ID")
-				}
-
-				// Verify it's valid base64url
-				if err := ValidateBase64URL(id); err != nil {
-					t.Errorf("Generated ID is not valid base64url: %v", err)
-				}
-
-				// Verify decoded length matches expected
-				decoded, err := DecodeBase64URL(id)
-				if err != nil {
-					t.Errorf("Failed to decode generated ID: %v", err)
-				}
-
-				if len(decoded) != tt.length {
-					t.Errorf("Decoded length = %d, want %d", len(decoded), tt.length)
-				}
+			if err != nil {
+				t.Fatalf("GenerateIdentifier() error = %v, want nil", err)
+			}
+			if id == "" {
+				t.Fatalf("expected non-empty identifier")
+			}
+			decoded, err := DecodeBase64URL(id)
+			if err != nil {
+				t.Fatalf("decoded identifier invalid base64url: %v", err)
+			}
+			if len(decoded) != tt.expectLen {
+				t.Fatalf("decoded length = %d, want %d", len(decoded), tt.expectLen)
 			}
 		})
 	}
 }
 
-func TestGenerateUserID(t *testing.T) {
-	id1, err := GenerateUserID(16)
-	if err != nil {
-		t.Fatalf("GenerateUserID() error = %v", err)
-	}
+func TestValidateIdentifier(t *testing.T) {
+	validID, _ := GenerateIdentifier(16)
+	tooLong := EncodeBase64URL(make([]byte, 65))
+	badB64 := "not@valid#b64"
 
-	id2, err := GenerateUserID(16)
-	if err != nil {
-		t.Fatalf("GenerateUserID() error = %v", err)
-	}
-
-	// IDs should be unique
-	if id1 == id2 {
-		t.Error("Expected unique user IDs")
-	}
-
-	// Both should be valid base64url
-	if err := ValidateBase64URL(id1); err != nil {
-		t.Errorf("ID1 is not valid base64url: %v", err)
-	}
-
-	if err := ValidateBase64URL(id2); err != nil {
-		t.Errorf("ID2 is not valid base64url: %v", err)
-	}
-}
-
-func TestEncodeBase64URL(t *testing.T) {
-	tests := []struct {
-		name  string
-		input []byte
-		want  string
-	}{
-		{
-			name:  "empty",
-			input: []byte{},
-			want:  "",
-		},
-		{
-			name:  "simple data",
-			input: []byte("hello"),
-			want:  base64.RawURLEncoding.EncodeToString([]byte("hello")),
-		},
-		{
-			name:  "binary data",
-			input: []byte{0x01, 0x02, 0x03, 0x04},
-			want:  base64.RawURLEncoding.EncodeToString([]byte{0x01, 0x02, 0x03, 0x04}),
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			got := EncodeBase64URL(tt.input)
-			if got != tt.want {
-				t.Errorf("EncodeBase64URL() = %v, want %v", got, tt.want)
-			}
-		})
-	}
-}
-
-func TestDecodeBase64URL(t *testing.T) {
 	tests := []struct {
 		name    string
-		input   string
-		want    []byte
+		id      string
 		wantErr bool
 	}{
-		{
-			name:    "empty",
-			input:   "",
-			want:    []byte{},
-			wantErr: false,
-		},
-		{
-			name:    "valid encoding",
-			input:   EncodeBase64URL([]byte("test")),
-			want:    []byte("test"),
-			wantErr: false,
-		},
-		{
-			name:    "invalid encoding",
-			input:   "!!!invalid!!!",
-			want:    nil,
-			wantErr: true,
-		},
+		{name: "valid", id: validID, wantErr: false},
+		{name: "too long", id: tooLong, wantErr: true},
+		{name: "invalid base64", id: badB64, wantErr: true},
+		{name: "empty", id: "", wantErr: false}, // empty decodes to zero-length, allowed by ValidateIdentifier if caller passes it
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got, err := DecodeBase64URL(tt.input)
-
+			err := ValidateIdentifier(tt.id)
 			if (err != nil) != tt.wantErr {
-				t.Errorf("DecodeBase64URL() error = %v, wantErr %v", err, tt.wantErr)
-				return
-			}
-
-			if !tt.wantErr {
-				if string(got) != string(tt.want) {
-					t.Errorf("DecodeBase64URL() = %v, want %v", got, tt.want)
-				}
+				t.Fatalf("ValidateIdentifier(%q) error = %v, wantErr %v", tt.id, err, tt.wantErr)
 			}
 		})
 	}
 }
 
-func TestValidateBase64URL(t *testing.T) {
-	tests := []struct {
-		name    string
-		input   string
-		wantErr bool
-	}{
-		{
-			name:    "valid empty",
-			input:   "",
-			wantErr: false,
-		},
-		{
-			name:    "valid encoding",
-			input:   EncodeBase64URL([]byte("test data")),
-			wantErr: false,
-		},
-		{
-			name:    "invalid characters",
-			input:   "not@valid#base64",
-			wantErr: true,
-		},
-		{
-			name:    "padding not allowed",
-			input:   base64.URLEncoding.EncodeToString([]byte("test")),
-			wantErr: true,
-		},
+func TestBase64URLHelpers(t *testing.T) {
+	raw := []byte("hello-world")
+	encoded := EncodeBase64URL(raw)
+
+	if _, err := DecodeBase64URL(encoded); err != nil {
+		t.Fatalf("DecodeBase64URL(%q) error = %v", encoded, err)
 	}
 
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			err := ValidateBase64URL(tt.input)
+	if err := ValidateBase64URL(encoded); err != nil {
+		t.Fatalf("ValidateBase64URL(%q) error = %v", encoded, err)
+	}
 
-			if (err != nil) != tt.wantErr {
-				t.Errorf("ValidateBase64URL() error = %v, wantErr %v", err, tt.wantErr)
-			}
-		})
+	if err := ValidateBase64URL(encoded + "==="); err == nil {
+		t.Fatalf("expected error for padded base64url input")
+	}
+}
+
+func TestBase32Helpers(t *testing.T) {
+	raw := []byte("hello-base32")
+	encoded := EncodeBase32(raw)
+
+	// Ensure we use unpadded encoding
+	if encoded[len(encoded)-1] == '=' {
+		t.Fatalf("expected no padding in Base32 encoding, got %q", encoded)
+	}
+
+	decoded, err := DecodeBase32(encoded)
+	if err != nil {
+		t.Fatalf("DecodeBase32 error: %v", err)
+	}
+	if string(decoded) != string(raw) {
+		t.Fatalf("DecodeBase32 roundtrip mismatch: got %q, want %q", decoded, raw)
+	}
+
+	if err := ValidateBase32(encoded); err != nil {
+		t.Fatalf("ValidateBase32(%q) error = %v", encoded, err)
+	}
+
+	// Invalid character
+	if err := ValidateBase32(encoded + "!"); err == nil {
+		t.Fatalf("expected error for invalid Base32 input")
 	}
 }
 
 func TestEncodeDecodeRoundTrip(t *testing.T) {
-	testData := [][]byte{
-		[]byte("hello world"),
-		[]byte{0x00, 0x01, 0x02, 0x03},
-		[]byte("special chars: !@#$%^&*()"),
-		make([]byte, 256), // zeros
+	vectors := [][]byte{
+		[]byte(""),
+		[]byte("abc123"),
+		[]byte{0x00, 0xFF, 0x10, 0x20},
+		make([]byte, 128),
 	}
 
-	for i, data := range testData {
-		encoded := EncodeBase64URL(data)
-		decoded, err := DecodeBase64URL(encoded)
-
+	for i, vec := range vectors {
+		enc := EncodeBase64URL(vec)
+		dec, err := DecodeBase64URL(enc)
 		if err != nil {
-			t.Errorf("Test %d: DecodeBase64URL() error = %v", i, err)
-			continue
+			t.Fatalf("case %d: DecodeBase64URL error = %v", i, err)
 		}
+		if string(dec) != string(vec) {
+			t.Fatalf("case %d: roundtrip mismatch got %v want %v", i, dec, vec)
+		}
+	}
+}
 
-		if string(decoded) != string(data) {
-			t.Errorf("Test %d: Round trip failed, got %v, want %v", i, decoded, data)
-		}
+func TestBase32ReferenceEncoding(t *testing.T) {
+	// Cross-check against stdlib with NoPadding to ensure deterministic encoding
+	raw := []byte("test-data-123")
+	ref := base32.StdEncoding.WithPadding(base32.NoPadding).EncodeToString(raw)
+	got := EncodeBase32(raw)
+	if got != ref {
+		t.Fatalf("EncodeBase32 mismatch: got %q, want %q", got, ref)
+	}
+}
+
+func TestBase64URLReferenceEncoding(t *testing.T) {
+	raw := []byte("test-data-b64")
+	ref := base64.RawURLEncoding.EncodeToString(raw)
+	got := EncodeBase64URL(raw)
+	if got != ref {
+		t.Fatalf("EncodeBase64URL mismatch: got %q, want %q", got, ref)
 	}
 }

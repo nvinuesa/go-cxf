@@ -10,12 +10,12 @@ import (
 func makeMinimalHeaderCBOR() *Header {
 	cred := json.RawMessage(`{"type":"note"}`)
 	item := Item{
-		ID:          "item-1",
+		ID:          "aXRlbS0x", // base64url("item-1")
 		Title:       "Item",
 		Credentials: []json.RawMessage{cred},
 	}
 	account := Account{
-		ID:       "acc-1",
+		ID:       "YWNjb3VudC0x", // base64url("account-1")
 		Username: "user",
 		Email:    "user@example.com",
 		Items:    []Item{item},

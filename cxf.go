@@ -160,7 +160,7 @@ func (h *Header) Validate() error {
 	if h.Version.Major != VersionMajor || h.Version.Minor != VersionMinor {
 		return ErrInvalidVersion
 	}
-	if h.ExporterRpId == "" || h.ExporterDisplayName == "" {
+	if h.ExporterRpId == "" || h.ExporterDisplayName == "" || h.Timestamp == 0 {
 		return ErrInvalidFormat
 	}
 	if len(h.Accounts) == 0 {
@@ -178,6 +178,9 @@ func (h *Header) Validate() error {
 func (a *Account) Validate() error {
 	if a.ID == "" || a.Username == "" || a.Email == "" {
 		return ErrMissingFields
+	}
+	if err := ValidateIdentifier(a.ID); err != nil {
+		return err
 	}
 	if len(a.Items) == 0 {
 		return ErrMissingItem
@@ -200,6 +203,9 @@ func (c *Collection) Validate() error {
 	if c.ID == "" || c.Title == "" {
 		return ErrMissingFields
 	}
+	if err := ValidateIdentifier(c.ID); err != nil {
+		return err
+	}
 	return nil
 }
 
@@ -207,6 +213,9 @@ func (c *Collection) Validate() error {
 func (i *Item) Validate() error {
 	if i.ID == "" || i.Title == "" {
 		return ErrMissingFields
+	}
+	if err := ValidateIdentifier(i.ID); err != nil {
+		return err
 	}
 	if len(i.Credentials) == 0 {
 		return ErrMissingFields
