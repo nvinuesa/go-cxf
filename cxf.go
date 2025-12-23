@@ -202,10 +202,21 @@ func ValidateEditableFields(fields []EditableField) error {
 
 // Credential type constants.
 const (
-	CredentialTypeTOTP    = "totp"
-	CredentialTypePasskey = "passkey"
-	CredentialTypeFile    = "file"
+	CredentialTypeBasicAuth  = "basic-auth"
+	CredentialTypeTOTP       = "totp"
+	CredentialTypePasskey    = "passkey"
+	CredentialTypeFile       = "file"
+	CredentialTypeCreditCard = "credit-card"
+	CredentialTypeNote       = "note"
 )
+
+// BasicAuth credential schema.
+type BasicAuthCredential struct {
+	Type     string        `json:"type"`
+	Urls     []string      `json:"urls"`
+	Username EditableField `json:"username,omitempty"`
+	Password EditableField `json:"password,omitempty"`
+}
 
 // TOTP credential schema.
 type TOTPCredential struct {
@@ -228,6 +239,68 @@ var totpAllowedDigits = map[int]struct{}{
 	6: {}, 7: {}, 8: {},
 }
 
+// Passkey credential schema.
+type PasskeyCredential struct {
+	Type         string `json:"type"`
+	CredentialID string `json:"credentialId"`
+	PrivateKey   string `json:"privateKey"`
+	PublicKey    string `json:"publicKey,omitempty"`
+	SignCount    uint32 `json:"signCount,omitempty"`
+}
+
+// File credential schema.
+type FileCredential struct {
+	Type          string `json:"type"`
+	Name          string `json:"name"`
+	MimeType      string `json:"mimeType"`
+	Data          string `json:"data"`
+	IntegrityHash string `json:"integrityHash"`
+}
+
+// Credit card credential schema.
+type CreditCardCredential struct {
+	Type               string `json:"type"`
+	Number             string `json:"number"`
+	FullName           string `json:"fullName"`
+	CardType           string `json:"cardType,omitempty"`
+	VerificationNumber string `json:"verificationNumber,omitempty"`
+	ExpiryDate         string `json:"expiryDate,omitempty"`
+	ValidFrom          string `json:"validFrom,omitempty"`
+}
+
+// Note credential schema.
+type NoteCredential struct {
+	Type string `json:"type"`
+	Text string `json:"text"`
+}
+
+func ValidateBasicAuthCredential(c BasicAuthCredential) error {
+	if c.Type != CredentialTypeBasicAuth {
+		return ErrInvalidCredentialType
+	}
+	if len(c.Urls) == 0 {
+		return ErrMissingFields
+	}
+	for _, u := range c.Urls {
+		if u == "" {
+			return ErrInvalidCredential
+		}
+	}
+	if c.Username.FieldType == "" || len(c.Username.Value) == 0 {
+		return ErrMissingFields
+	}
+	if err := ValidateEditableField(c.Username); err != nil {
+		return err
+	}
+	if c.Password.FieldType == "" || len(c.Password.Value) == 0 {
+		return ErrMissingFields
+	}
+	if err := ValidateEditableField(c.Password); err != nil {
+		return err
+	}
+	return nil
+}
+
 func ValidateTOTPCredential(c TOTPCredential) error {
 	if c.Type != CredentialTypeTOTP {
 		return ErrInvalidCredentialType
@@ -245,15 +318,6 @@ func ValidateTOTPCredential(c TOTPCredential) error {
 		return ErrInvalidCredential
 	}
 	return nil
-}
-
-// Passkey credential schema.
-type PasskeyCredential struct {
-	Type         string `json:"type"`
-	CredentialID string `json:"credentialId"`
-	PrivateKey   string `json:"privateKey"`
-	PublicKey    string `json:"publicKey,omitempty"`
-	SignCount    uint32 `json:"signCount,omitempty"`
 }
 
 func ValidatePasskeyCredential(c PasskeyCredential) error {
@@ -284,15 +348,6 @@ func ValidatePasskeyCredential(c PasskeyCredential) error {
 	return nil
 }
 
-// File credential schema.
-type FileCredential struct {
-	Type          string `json:"type"`
-	Name          string `json:"name"`
-	MimeType      string `json:"mimeType"`
-	Data          string `json:"data"`
-	IntegrityHash string `json:"integrityHash"`
-}
-
 func ValidateFileCredential(c FileCredential) error {
 	if c.Type != CredentialTypeFile {
 		return ErrInvalidCredentialType
@@ -309,6 +364,69 @@ func ValidateFileCredential(c FileCredential) error {
 		return ErrInvalidCredential
 	}
 	return nil
+}
+
+func ValidateCreditCardCredential(c CreditCardCredential) error {
+	if c.Type != CredentialTypeCreditCard {
+		return ErrInvalidCredentialType
+	}
+	normalized := normalizeCreditCardNumber(c.Number)
+	if normalized == "" || c.FullName == "" {
+		return ErrMissingFields
+	}
+	if len(normalized) < 12 || len(normalized) > 19 {
+		return ErrInvalidCredential
+	}
+	if !luhnCheck(normalized) {
+		return ErrInvalidCredential
+	}
+	return nil
+}
+
+func ValidateNoteCredential(c NoteCredential) error {
+	if c.Type != CredentialTypeNote {
+		return ErrInvalidCredentialType
+	}
+	if c.Text == "" {
+		return ErrMissingFields
+	}
+	return nil
+}
+
+func normalizeCreditCardNumber(number string) string {
+	buf := make([]byte, 0, len(number))
+	for i := 0; i < len(number); i++ {
+		ch := number[i]
+		if ch == ' ' || ch == '-' {
+			continue
+		}
+		buf = append(buf, ch)
+	}
+	return string(buf)
+}
+
+func luhnCheck(number string) bool {
+	if number == "" {
+		return false
+	}
+	sum := 0
+	double := false
+	for i := len(number) - 1; i >= 0; i-- {
+		d := number[i]
+		if d < '0' || d > '9' {
+			return false
+		}
+		n := int(d - '0')
+		if double {
+			n *= 2
+			if n > 9 {
+				n -= 9
+			}
+		}
+		sum += n
+		double = !double
+	}
+	return sum%10 == 0
 }
 
 // ComputeIntegrityHash returns the base64url-encoded SHA-256 hash of the data.
@@ -338,7 +456,14 @@ func ValidateCredential(raw json.RawMessage) error {
 	if err := json.Unmarshal(raw, &env); err != nil {
 		return ErrInvalidCredential
 	}
+
 	switch env.Type {
+	case CredentialTypeBasicAuth:
+		var c BasicAuthCredential
+		if err := json.Unmarshal(raw, &c); err != nil {
+			return ErrInvalidCredential
+		}
+		return ValidateBasicAuthCredential(c)
 	case CredentialTypeTOTP:
 		var c TOTPCredential
 		if err := json.Unmarshal(raw, &c); err != nil {
@@ -357,6 +482,18 @@ func ValidateCredential(raw json.RawMessage) error {
 			return ErrInvalidCredential
 		}
 		return ValidateFileCredential(c)
+	case CredentialTypeCreditCard:
+		var c CreditCardCredential
+		if err := json.Unmarshal(raw, &c); err != nil {
+			return ErrInvalidCredential
+		}
+		return ValidateCreditCardCredential(c)
+	case CredentialTypeNote:
+		var c NoteCredential
+		if err := json.Unmarshal(raw, &c); err != nil {
+			return ErrInvalidCredential
+		}
+		return ValidateNoteCredential(c)
 	default:
 		return ErrInvalidCredentialType
 	}

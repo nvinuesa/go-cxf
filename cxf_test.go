@@ -314,3 +314,38 @@ func TestValidateIntegrityHash(t *testing.T) {
 		t.Fatalf("expected ErrMissingFields for empty hash, got %v", err)
 	}
 }
+
+func TestValidateCredentialBasicAuthValid(t *testing.T) {
+	raw := json.RawMessage(`{"type":"basic-auth","urls":["https://example.com"],"username":{"fieldType":"string","value":"\"user\""},"password":{"fieldType":"string","value":"\"pass\""}}`)
+	if err := ValidateCredential(raw); err != nil {
+		t.Fatalf("expected valid basic-auth credential, got %v", err)
+	}
+}
+
+func TestValidateCredentialBasicAuthMissingFields(t *testing.T) {
+	raw := json.RawMessage(`{"type":"basic-auth","urls":["https://example.com"]}`)
+	if err := ValidateCredential(raw); err != ErrMissingFields {
+		t.Fatalf("expected ErrMissingFields for missing username/password, got %v", err)
+	}
+}
+
+func TestValidateCredentialCreditCardValid(t *testing.T) {
+	raw := json.RawMessage(`{"type":"credit-card","number":"4111 1111 1111 1111","fullName":"Test User"}`)
+	if err := ValidateCredential(raw); err != nil {
+		t.Fatalf("expected valid credit-card credential, got %v", err)
+	}
+}
+
+func TestValidateCredentialCreditCardInvalidLuhn(t *testing.T) {
+	raw := json.RawMessage(`{"type":"credit-card","number":"4111 1111 1111 1112","fullName":"Test User"}`)
+	if err := ValidateCredential(raw); err != ErrInvalidCredential {
+		t.Fatalf("expected ErrInvalidCredential for bad luhn, got %v", err)
+	}
+}
+
+func TestValidateCredentialNoteMissingText(t *testing.T) {
+	raw := json.RawMessage(`{"type":"note","text":""}`)
+	if err := ValidateCredential(raw); err != ErrMissingFields {
+		t.Fatalf("expected ErrMissingFields for empty note text, got %v", err)
+	}
+}
