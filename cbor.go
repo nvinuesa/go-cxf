@@ -37,34 +37,19 @@ func init() {
 	}
 }
 
-// MarshalContainerCBOR serializes the container to CBOR format.
-func MarshalContainerCBOR(c *Container) ([]byte, error) {
-	return cborEncMode.Marshal(c)
+// MarshalHeaderCBOR serializes the CXF header to CBOR format.
+func MarshalHeaderCBOR(h *Header) ([]byte, error) {
+	return cborEncMode.Marshal(h)
 }
 
-// UnmarshalContainerCBOR deserializes a CBOR byte array into a Container.
-func UnmarshalContainerCBOR(data []byte) (*Container, error) {
-	var container Container
-	if err := cborDecMode.Unmarshal(data, &container); err != nil {
+// UnmarshalHeaderCBOR deserializes a CBOR byte array into a Header.
+func UnmarshalHeaderCBOR(data []byte) (*Header, error) {
+	var header Header
+	if err := cborDecMode.Unmarshal(data, &header); err != nil {
 		return nil, fmt.Errorf("failed to unmarshal CBOR: %w", err)
 	}
 
-	return &container, nil
-}
-
-// MarshalCredentialCBOR serializes a credential to CBOR format.
-func MarshalCredentialCBOR(c *Credential) ([]byte, error) {
-	return cborEncMode.Marshal(c)
-}
-
-// UnmarshalCredentialCBOR deserializes a CBOR byte array into a Credential.
-func UnmarshalCredentialCBOR(data []byte) (*Credential, error) {
-	var credential Credential
-	if err := cborDecMode.Unmarshal(data, &credential); err != nil {
-		return nil, fmt.Errorf("failed to unmarshal CBOR: %w", err)
-	}
-
-	return &credential, nil
+	return &header, nil
 }
 
 // EncodeCBOR encodes arbitrary data to CBOR format.

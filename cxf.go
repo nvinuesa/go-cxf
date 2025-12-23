@@ -1,316 +1,215 @@
-// Package cxf implements the FIDO Alliance Credential Exchange Format (CXF) specification.
-// This package provides types and functions for creating, parsing, and validating
-// CXF credential exchange containers according to the FIDO CXF v1.0 specification.
 package cxf
 
 import (
 	"encoding/json"
 	"errors"
-	"time"
 )
 
-// Version represents the CXF specification version
-const Version = "1.0"
+const (
+	// VersionMajor represents the CXF major version.
+	VersionMajor uint8 = 1
+	// VersionMinor represents the CXF minor version.
+	VersionMinor uint8 = 0
+)
 
+// Common validation errors.
 var (
-	// ErrInvalidVersion indicates the CXF version is not supported
-	ErrInvalidVersion = errors.New("invalid CXF version")
-	// ErrInvalidFormat indicates the CXF format is invalid
-	ErrInvalidFormat = errors.New("invalid CXF format")
-	// ErrMissingCredential indicates no credential is present
-	ErrMissingCredential = errors.New("missing credential")
-	// ErrInvalidCredentialType indicates an unsupported credential type
-	ErrInvalidCredentialType = errors.New("invalid credential type")
+	ErrInvalidVersion  = errors.New("invalid CXF version")
+	ErrInvalidFormat   = errors.New("invalid CXF format")
+	ErrMissingAccount  = errors.New("missing account")
+	ErrMissingItem     = errors.New("missing item")
+	ErrMissingFields   = errors.New("missing required fields")
+	ErrInvalidIDLength = errors.New("identifier exceeds 64 bytes")
 )
 
-// Container represents the top-level CXF container structure.
-// This is the main structure for exchanging credentials in CXF format.
-type Container struct {
-	// Version is the CXF specification version (must be "1.0")
-	Version string `json:"version"`
-
-	// FormatVersion is the format version for this container
-	FormatVersion string `json:"formatVersion,omitempty"`
-
-	// Type indicates the type of container (e.g., "credential", "credential-set")
-	Type string `json:"type"`
-
-	// Created is the timestamp when this container was created
-	Created time.Time `json:"created"`
-
-	// Credentials contains one or more credentials
-	Credentials []Credential `json:"credentials"`
-
-	// Metadata contains additional container metadata
-	Metadata map[string]interface{} `json:"metadata,omitempty"`
+// Version encodes the CXF version information.
+type Version struct {
+	Major uint8 `json:"major"`
+	Minor uint8 `json:"minor"`
 }
 
-// Credential represents a single credential within a CXF container.
-type Credential struct {
-	// ID is a unique identifier for this credential
-	ID string `json:"id"`
-
-	// Type specifies the credential type (e.g., "public-key", "passkey")
-	Type CredentialType `json:"type"`
-
-	// Created is when the credential was created
-	Created time.Time `json:"created"`
-
-	// LastUsed is when the credential was last used
-	LastUsed *time.Time `json:"lastUsed,omitempty"`
-
-	// RelyingParty contains information about the relying party
-	RelyingParty RelyingParty `json:"relyingParty"`
-
-	// User contains information about the user
-	User UserInfo `json:"user"`
-
-	// PublicKey contains the public key information
-	PublicKey *PublicKeyCredential `json:"publicKey,omitempty"`
-
-	// PrivateKey contains the private key (if exported)
-	PrivateKey *PrivateKeyData `json:"privateKey,omitempty"`
-
-	// Attestation contains attestation data
-	Attestation *AttestationData `json:"attestation,omitempty"`
-
-	// Metadata contains additional credential metadata
-	Metadata map[string]interface{} `json:"metadata,omitempty"`
+// Header is the top-level CXF structure (formerly Container).
+type Header struct {
+	Version             Version   `json:"version"`
+	ExporterRpId        string    `json:"exporterRpId"`
+	ExporterDisplayName string    `json:"exporterDisplayName"`
+	Timestamp           uint64    `json:"timestamp"` // UNIX seconds
+	Accounts            []Account `json:"accounts"`
 }
 
-// CredentialType represents the type of credential
-type CredentialType string
+// Container is kept as an alias for backwards compatibility with previous code paths.
+type Container = Header
 
+// Account represents a credential owner’s account.
+type Account struct {
+	ID          string       `json:"id"`
+	Username    string       `json:"username"`
+	Email       string       `json:"email"`
+	FullName    string       `json:"fullName,omitempty"`
+	Collections []Collection `json:"collections"`
+	Items       []Item       `json:"items"`
+	Extensions  []Extension  `json:"extensions,omitempty"`
+}
+
+// Collection groups items together.
+type Collection struct {
+	ID             string       `json:"id"`
+	CreationAt     *uint64      `json:"creationAt,omitempty"`
+	ModifiedAt     *uint64      `json:"modifiedAt,omitempty"`
+	Title          string       `json:"title"`
+	Subtitle       string       `json:"subtitle,omitempty"`
+	Items          []LinkedItem `json:"items"`
+	SubCollections []Collection `json:"subCollections,omitempty"`
+	Extensions     []Extension  `json:"extensions,omitempty"`
+}
+
+// LinkedItem points to an item (and optionally its account).
+type LinkedItem struct {
+	Item    string `json:"item"`
+	Account string `json:"account,omitempty"`
+}
+
+// Item contains metadata and credentials.
+type Item struct {
+	ID          string            `json:"id"`
+	CreationAt  *uint64           `json:"creationAt,omitempty"`
+	ModifiedAt  *uint64           `json:"modifiedAt,omitempty"`
+	Title       string            `json:"title"`
+	Subtitle    string            `json:"subtitle,omitempty"`
+	Favorite    *bool             `json:"favorite,omitempty"`
+	Scope       *CredentialScope  `json:"scope,omitempty"`
+	Credentials []json.RawMessage `json:"credentials"`
+	Tags        []string          `json:"tags,omitempty"`
+	Extensions  []Extension       `json:"extensions,omitempty"`
+}
+
+// CredentialScope restricts where credentials should be presented.
+type CredentialScope struct {
+	Urls        []string       `json:"urls"`
+	AndroidApps []AndroidAppId `json:"androidApps"`
+}
+
+// AndroidAppId identifies an Android application.
+type AndroidAppId struct {
+	BundleId    string                            `json:"bundleId"`
+	Certificate *AndroidAppCertificateFingerprint `json:"certificate,omitempty"`
+	Name        string                            `json:"name,omitempty"`
+}
+
+// AndroidAppCertificateFingerprint stores a signing cert fingerprint.
+type AndroidAppCertificateFingerprint struct {
+	Fingerprint string `json:"fingerprint"`
+	HashAlg     string `json:"hashAlg"` // "sha256" / "sha512" / other
+}
+
+// EditableField represents a user-editable field with a type.
+type EditableField struct {
+	ID         string      `json:"id,omitempty"`
+	FieldType  string      `json:"fieldType"`
+	Value      string      `json:"value"`
+	Label      string      `json:"label,omitempty"`
+	Extensions []Extension `json:"extensions,omitempty"`
+}
+
+// FieldType is an enumeration of supported field types.
 const (
-	// CredentialTypePublicKey represents a public key credential
-	CredentialTypePublicKey CredentialType = "public-key"
-
-	// CredentialTypePasskey represents a passkey credential
-	CredentialTypePasskey CredentialType = "passkey"
-
-	// CredentialTypeFIDO2 represents a FIDO2 credential
-	CredentialTypeFIDO2 CredentialType = "fido2"
+	FieldTypeString              = "string"
+	FieldTypeConcealedString     = "concealed-string"
+	FieldTypeEmail               = "email"
+	FieldTypeNumber              = "number"
+	FieldTypeBoolean             = "boolean"
+	FieldTypeDate                = "date"
+	FieldTypeYearMonth           = "year-month"
+	FieldTypeWifiNetworkSecurity = "wifi-network-security-type"
+	FieldTypeCountryCode         = "country-code"
+	FieldTypeSubdivisionCode     = "subdivision-code"
 )
 
-// RelyingParty contains information about the relying party (RP).
-type RelyingParty struct {
-	// ID is the relying party identifier
-	ID string `json:"id"`
-
-	// Name is the human-readable name of the relying party
-	Name string `json:"name"`
-
-	// Icon is an optional URL to the relying party icon
-	Icon string `json:"icon,omitempty"`
+// Extension is a generic extension payload.
+type Extension struct {
+	Name string                 `json:"name"`
+	Data map[string]interface{} `json:"data,omitempty"`
 }
 
-// UserInfo contains information about the user associated with a credential.
-type UserInfo struct {
-	// ID is the user identifier (base64url encoded)
-	ID string `json:"id"`
-
-	// Name is the user's account name
-	Name string `json:"name"`
-
-	// DisplayName is the user's display name
-	DisplayName string `json:"displayName"`
-
-	// Icon is an optional URL to the user's icon
-	Icon string `json:"icon,omitempty"`
-}
-
-// PublicKeyCredential contains public key credential data.
-type PublicKeyCredential struct {
-	// CredentialID is the credential identifier (base64url encoded)
-	CredentialID string `json:"credentialId"`
-
-	// Algorithm is the COSE algorithm identifier
-	Algorithm int `json:"algorithm"`
-
-	// PublicKey is the public key in COSE_Key format (base64url encoded)
-	PublicKey string `json:"publicKey"`
-
-	// SignCount is the signature counter value
-	SignCount uint32 `json:"signCount"`
-
-	// Transports indicates the supported transports
-	Transports []AuthenticatorTransport `json:"transports,omitempty"`
-
-	// AAGUID is the authenticator AAGUID
-	AAGUID string `json:"aaguid,omitempty"`
-}
-
-// AuthenticatorTransport represents an authenticator transport method
-type AuthenticatorTransport string
-
-const (
-	// TransportUSB indicates USB transport
-	TransportUSB AuthenticatorTransport = "usb"
-
-	// TransportNFC indicates NFC transport
-	TransportNFC AuthenticatorTransport = "nfc"
-
-	// TransportBLE indicates Bluetooth Low Energy transport
-	TransportBLE AuthenticatorTransport = "ble"
-
-	// TransportInternal indicates platform/internal transport
-	TransportInternal AuthenticatorTransport = "internal"
-
-	// TransportHybrid indicates hybrid transport
-	TransportHybrid AuthenticatorTransport = "hybrid"
-)
-
-// PrivateKeyData contains private key information (for export scenarios).
-type PrivateKeyData struct {
-	// KeyType specifies the type of private key
-	KeyType string `json:"keyType"`
-
-	// PrivateKey is the private key data (base64url encoded)
-	PrivateKey string `json:"privateKey"`
-
-	// Encrypted indicates if the private key is encrypted
-	Encrypted bool `json:"encrypted,omitempty"`
-
-	// EncryptionMethod specifies the encryption method if encrypted
-	EncryptionMethod string `json:"encryptionMethod,omitempty"`
-}
-
-// AttestationData contains attestation information.
-type AttestationData struct {
-	// Format is the attestation statement format
-	Format AttestationFormat `json:"format"`
-
-	// Statement is the attestation statement
-	Statement map[string]interface{} `json:"statement"`
-
-	// ClientDataJSON is the client data JSON (base64url encoded)
-	ClientDataJSON string `json:"clientDataJSON,omitempty"`
-
-	// AuthenticatorData is the authenticator data (base64url encoded)
-	AuthenticatorData string `json:"authenticatorData,omitempty"`
-}
-
-// AttestationFormat represents the attestation statement format
-type AttestationFormat string
-
-const (
-	// AttestationFormatPacked represents the packed attestation format
-	AttestationFormatPacked AttestationFormat = "packed"
-
-	// AttestationFormatTPM represents the TPM attestation format
-	AttestationFormatTPM AttestationFormat = "tpm"
-
-	// AttestationFormatAndroidKey represents the Android Key attestation format
-	AttestationFormatAndroidKey AttestationFormat = "android-key"
-
-	// AttestationFormatAndroidSafetyNet represents the Android SafetyNet attestation format
-	AttestationFormatAndroidSafetyNet AttestationFormat = "android-safetynet"
-
-	// AttestationFormatFIDOU2F represents the FIDO U2F attestation format
-	AttestationFormatFIDOU2F AttestationFormat = "fido-u2f"
-
-	// AttestationFormatNone represents no attestation
-	AttestationFormatNone AttestationFormat = "none"
-
-	// AttestationFormatApple represents the Apple attestation format
-	AttestationFormatApple AttestationFormat = "apple"
-)
-
-// NewContainer creates a new CXF container with the specified type.
-func NewContainer(containerType string) *Container {
-	return &Container{
-		Version:     Version,
-		Type:        containerType,
-		Created:     time.Now().UTC(),
-		Credentials: make([]Credential, 0),
-		Metadata:    make(map[string]interface{}),
+// NewHeader constructs a Header with the default version.
+func NewHeader(exporterRpId, exporterDisplayName string, timestamp uint64) *Header {
+	return &Header{
+		Version: Version{
+			Major: VersionMajor,
+			Minor: VersionMinor,
+		},
+		ExporterRpId:        exporterRpId,
+		ExporterDisplayName: exporterDisplayName,
+		Timestamp:           timestamp,
+		Accounts:            make([]Account, 0),
 	}
 }
 
-// AddCredential adds a credential to the container.
-func (c *Container) AddCredential(cred Credential) {
-	c.Credentials = append(c.Credentials, cred)
+// Marshal serializes the header to JSON.
+func (h *Header) Marshal() ([]byte, error) {
+	return json.Marshal(h)
 }
 
-// Validate validates the CXF container structure.
-func (c *Container) Validate() error {
-	if c.Version != Version {
+// MarshalIndent serializes the header to indented JSON.
+func (h *Header) MarshalIndent() ([]byte, error) {
+	return json.MarshalIndent(h, "", "  ")
+}
+
+// Validate performs basic structural validation of the header.
+func (h *Header) Validate() error {
+	if h.Version.Major != VersionMajor || h.Version.Minor != VersionMinor {
 		return ErrInvalidVersion
 	}
-
-	if c.Type == "" {
+	if h.ExporterRpId == "" || h.ExporterDisplayName == "" {
 		return ErrInvalidFormat
 	}
-
-	if len(c.Credentials) == 0 {
-		return ErrMissingCredential
+	if len(h.Accounts) == 0 {
+		return ErrMissingAccount
 	}
-
-	for _, cred := range c.Credentials {
-		if err := cred.Validate(); err != nil {
+	for _, acc := range h.Accounts {
+		if err := acc.Validate(); err != nil {
 			return err
 		}
 	}
-
 	return nil
 }
 
-// Marshal serializes the container to JSON.
-func (c *Container) Marshal() ([]byte, error) {
-	return json.Marshal(c)
-}
-
-// MarshalIndent serializes the container to indented JSON.
-func (c *Container) MarshalIndent() ([]byte, error) {
-	return json.MarshalIndent(c, "", "  ")
-}
-
-// Unmarshal deserializes a JSON byte array into a Container.
-func Unmarshal(data []byte) (*Container, error) {
-	var container Container
-	if err := json.Unmarshal(data, &container); err != nil {
-		return nil, err
+// Validate performs basic structural validation of the account.
+func (a *Account) Validate() error {
+	if a.ID == "" || a.Username == "" || a.Email == "" {
+		return ErrMissingFields
 	}
-
-	return &container, nil
-}
-
-// Validate validates the credential structure.
-func (c *Credential) Validate() error {
-	if c.ID == "" {
-		return ErrInvalidFormat
+	if len(a.Items) == 0 {
+		return ErrMissingItem
 	}
-
-	if c.Type == "" {
-		return ErrInvalidCredentialType
+	for _, item := range a.Items {
+		if err := item.Validate(); err != nil {
+			return err
+		}
 	}
-
-	if c.RelyingParty.ID == "" {
-		return ErrInvalidFormat
+	for _, col := range a.Collections {
+		if err := col.Validate(); err != nil {
+			return err
+		}
 	}
-
-	if c.User.ID == "" {
-		return ErrInvalidFormat
-	}
-
 	return nil
 }
 
-// NewCredential creates a new credential with the specified parameters.
-func NewCredential(id string, credType CredentialType, rpID, rpName, userID, userName, userDisplayName string) *Credential {
-	return &Credential{
-		ID:      id,
-		Type:    credType,
-		Created: time.Now().UTC(),
-		RelyingParty: RelyingParty{
-			ID:   rpID,
-			Name: rpName,
-		},
-		User: UserInfo{
-			ID:          userID,
-			Name:        userName,
-			DisplayName: userDisplayName,
-		},
-		Metadata: make(map[string]interface{}),
+// Validate checks collection invariants.
+func (c *Collection) Validate() error {
+	if c.ID == "" || c.Title == "" {
+		return ErrMissingFields
 	}
+	return nil
+}
+
+// Validate checks item invariants.
+func (i *Item) Validate() error {
+	if i.ID == "" || i.Title == "" {
+		return ErrMissingFields
+	}
+	if len(i.Credentials) == 0 {
+		return ErrMissingFields
+	}
+	return nil
 }
