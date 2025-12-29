@@ -247,6 +247,28 @@ func validateCredentialScope(scope *CredentialScope) error {
 	return nil
 }
 
+func validateExtensions(exts []Extension) error {
+	for _, ext := range exts {
+		switch ext.Name {
+		case "":
+			return ErrMissingFields
+		case "shared":
+			// Known typed extension: validate its payload.
+			if _, err := DecodeSharedExtension(ext); err != nil {
+				// Unknown enums inside the typed payload should be ignored per forward-compat rules.
+				if errors.Is(err, ErrIgnored) {
+					continue
+				}
+				return err
+			}
+		default:
+			// Unknown extensions must be ignored for forward compatibility.
+			continue
+		}
+	}
+	return nil
+}
+
 func validatePKCS8PrivateKeyDer(der []byte) error {
 	// Minimal, safe sanity check: ensure this is parseable as PKCS#8.
 	// This avoids downstream consumers assuming DER correctness.
@@ -1658,6 +1680,9 @@ func (a *Account) Validate() error {
 			return err
 		}
 	}
+	if err := validateExtensions(a.Extensions); err != nil {
+		return err
+	}
 	return nil
 }
 
@@ -1667,6 +1692,9 @@ func (c *Collection) Validate() error {
 		return ErrMissingFields
 	}
 	if err := ValidateIdentifier(c.ID); err != nil {
+		return err
+	}
+	if err := validateExtensions(c.Extensions); err != nil {
 		return err
 	}
 	return nil
@@ -1695,6 +1723,9 @@ func (i *Item) Validate() error {
 		return ErrMissingFields
 	}
 	if err := ValidateCredentials(i.Credentials); err != nil {
+		return err
+	}
+	if err := validateExtensions(i.Extensions); err != nil {
 		return err
 	}
 	return nil
