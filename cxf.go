@@ -1,12 +1,13 @@
 package cxf
 
 import (
-	"bytes"
 	"crypto/sha256"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
+	"strconv"
+	"strings"
 	"time"
 )
 
@@ -242,6 +243,18 @@ func validateSubdivisionCodeString(s string) bool {
 	return dash == 1
 }
 
+func parseEditableFieldStringValue(raw json.RawMessage) (string, error) {
+	if len(raw) == 0 {
+		return "", ErrMissingFields
+	}
+	var s string
+	if err := json.Unmarshal(raw, &s); err != nil {
+		// Spec requires EditableField.value to be a string (tstr)
+		return "", ErrInvalidFieldValue
+	}
+	return s, nil
+}
+
 // ValidateEditableField enforces field type and value constraints for an editable field.
 func ValidateEditableField(f EditableField) error {
 	if f.FieldType == "" || len(f.Value) == 0 {
@@ -256,54 +269,47 @@ func ValidateEditableField(f EditableField) error {
 		}
 	}
 
+	// Spec: EditableField.value is a string (tstr) for all FieldType values.
+	// Some FieldTypes impose additional constraints on the string's format.
+	s, err := parseEditableFieldStringValue(f.Value)
+	if err != nil {
+		return err
+	}
+
 	switch f.FieldType {
 	case FieldTypeBoolean:
-		var v bool
-		if err := json.Unmarshal(f.Value, &v); err != nil {
+		// Spec: MUST be "true" or "false". Be strict: trim whitespace and require exact match.
+		v := strings.ToLower(strings.TrimSpace(s))
+		if v != "true" && v != "false" {
 			return ErrInvalidFieldValue
 		}
 	case FieldTypeNumber:
-		dec := json.NewDecoder(bytes.NewReader(f.Value))
-		dec.UseNumber()
-		var v interface{}
-		if err := dec.Decode(&v); err != nil {
+		// Spec: stringified numeric value. Require it parses as a float.
+		if _, err := strconv.ParseFloat(strings.TrimSpace(s), 64); err != nil {
 			return ErrInvalidFieldValue
 		}
-		switch n := v.(type) {
-		case json.Number:
-			if _, err := n.Float64(); err != nil {
-				return ErrInvalidFieldValue
-			}
-		default:
+	case FieldTypeDate:
+		if !validateDateString(s) {
+			return ErrInvalidFieldValue
+		}
+	case FieldTypeYearMonth:
+		if !validateYearMonthString(s) {
+			return ErrInvalidFieldValue
+		}
+	case FieldTypeCountryCode:
+		if !validateCountryCodeString(s) {
+			return ErrInvalidFieldValue
+		}
+	case FieldTypeSubdivisionCode:
+		if !validateSubdivisionCodeString(s) {
+			return ErrInvalidFieldValue
+		}
+	case FieldTypeWifiNetworkSecurity:
+		if _, ok := allowedWifiNetworkSecurity[s]; !ok {
 			return ErrInvalidFieldValue
 		}
 	default:
-		var s string
-		if err := json.Unmarshal(f.Value, &s); err != nil {
-			return ErrInvalidFieldValue
-		}
-		switch f.FieldType {
-		case FieldTypeDate:
-			if !validateDateString(s) {
-				return ErrInvalidFieldValue
-			}
-		case FieldTypeYearMonth:
-			if !validateYearMonthString(s) {
-				return ErrInvalidFieldValue
-			}
-		case FieldTypeCountryCode:
-			if !validateCountryCodeString(s) {
-				return ErrInvalidFieldValue
-			}
-		case FieldTypeSubdivisionCode:
-			if !validateSubdivisionCodeString(s) {
-				return ErrInvalidFieldValue
-			}
-		case FieldTypeWifiNetworkSecurity:
-			if _, ok := allowedWifiNetworkSecurity[s]; !ok {
-				return ErrInvalidFieldValue
-			}
-		}
+		// string / concealed-string / email have no additional constraints here
 	}
 
 	return nil

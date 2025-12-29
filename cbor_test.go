@@ -75,7 +75,7 @@ func TestUnmarshalHeaderCBOR(t *testing.T) {
 }
 
 func TestHeaderMarshalCBORWithWiFiAndSSHRoundTrip(t *testing.T) {
-	wifi := json.RawMessage(`{"type":"wifi","ssid":{"fieldType":"string","value":"MyWiFi"},"networkSecurityType":{"fieldType":"wifi-network-security-type","value":"wpa2-personal"},"passphrase":{"fieldType":"concealed-string","value":"secret"},"hidden":{"fieldType":"boolean","value":false}}`)
+	wifi := json.RawMessage(`{"type":"wifi","ssid":{"fieldType":"string","value":"MyWiFi"},"networkSecurityType":{"fieldType":"wifi-network-security-type","value":"wpa2-personal"},"passphrase":{"fieldType":"concealed-string","value":"secret"},"hidden":{"fieldType":"boolean","value":"false"}}`)
 	ssh := json.RawMessage(`{"type":"ssh-key","keyType":"ssh-ed25519","privateKey":"` + EncodeBase64URL([]byte("PRIVATE-KEY-DATA")) + `","keyComment":"work"}`)
 
 	item := Item{

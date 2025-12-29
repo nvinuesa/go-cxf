@@ -188,7 +188,8 @@ func TestHeaderJSONRoundTrip(t *testing.T) {
 }
 
 func TestHeaderJSONRoundTripWithWiFiAndSSH(t *testing.T) {
-	wifi := json.RawMessage(`{"type":"wifi","ssid":{"fieldType":"string","value":"MyWiFi"},"networkSecurityType":{"fieldType":"wifi-network-security-type","value":"wpa2-personal"},"passphrase":{"fieldType":"concealed-string","value":"secret"},"hidden":{"fieldType":"boolean","value":false}}`)
+	// Spec: EditableField.value is a string (tstr) for all field types, including boolean/number.
+	wifi := json.RawMessage(`{"type":"wifi","ssid":{"fieldType":"string","value":"MyWiFi"},"networkSecurityType":{"fieldType":"wifi-network-security-type","value":"wpa2-personal"},"passphrase":{"fieldType":"concealed-string","value":"secret"},"hidden":{"fieldType":"boolean","value":"false"}}`)
 	ssh := json.RawMessage(`{"type":"ssh-key","keyType":"ssh-ed25519","privateKey":"` + EncodeBase64URL([]byte("PRIVATE-KEY-DATA")) + `","keyComment":"work"}`)
 
 	item := Item{
@@ -236,26 +237,42 @@ func TestHeaderJSONRoundTripWithWiFiAndSSH(t *testing.T) {
 }
 
 func TestValidateEditableFieldBoolean(t *testing.T) {
-	f := EditableField{FieldType: FieldTypeBoolean, Value: json.RawMessage("true")}
+	// Spec: boolean value is stringified.
+	f := EditableField{FieldType: FieldTypeBoolean, Value: json.RawMessage("\"true\"")}
 	if err := ValidateEditableField(f); err != nil {
 		t.Fatalf("expected boolean field to be valid, got %v", err)
 	}
 
+	// Still a string, but invalid boolean content.
 	f.Value = json.RawMessage("\"notbool\"")
 	if err := ValidateEditableField(f); err != ErrInvalidFieldValue {
 		t.Fatalf("expected ErrInvalidFieldValue for non-boolean, got %v", err)
 	}
+
+	// Non-string value should be rejected in spec-strict mode.
+	f.Value = json.RawMessage("true")
+	if err := ValidateEditableField(f); err != ErrInvalidFieldValue {
+		t.Fatalf("expected ErrInvalidFieldValue for non-string boolean, got %v", err)
+	}
 }
 
 func TestValidateEditableFieldNumber(t *testing.T) {
-	f := EditableField{FieldType: FieldTypeNumber, Value: json.RawMessage("123.45")}
+	// Spec: number value is stringified.
+	f := EditableField{FieldType: FieldTypeNumber, Value: json.RawMessage("\"123.45\"")}
 	if err := ValidateEditableField(f); err != nil {
 		t.Fatalf("expected number field to be valid, got %v", err)
 	}
 
+	// String, but not a number.
 	f.Value = json.RawMessage("\"string\"")
 	if err := ValidateEditableField(f); err != ErrInvalidFieldValue {
 		t.Fatalf("expected ErrInvalidFieldValue for non-numeric, got %v", err)
+	}
+
+	// Non-string should be rejected in spec-strict mode.
+	f.Value = json.RawMessage("123.45")
+	if err := ValidateEditableField(f); err != ErrInvalidFieldValue {
+		t.Fatalf("expected ErrInvalidFieldValue for non-string number, got %v", err)
 	}
 }
 
@@ -282,9 +299,9 @@ func TestValidateEditableFieldInvalidID(t *testing.T) {
 
 func TestValidateEditableFieldsStopsOnError(t *testing.T) {
 	fields := []EditableField{
-		{FieldType: FieldTypeBoolean, Value: json.RawMessage("false")},
-		{FieldType: "bad-type", Value: json.RawMessage("true")},
-		{FieldType: FieldTypeNumber, Value: json.RawMessage("10")},
+		{FieldType: FieldTypeBoolean, Value: json.RawMessage("\"false\"")},
+		{FieldType: "bad-type", Value: json.RawMessage("\"true\"")},
+		{FieldType: FieldTypeNumber, Value: json.RawMessage("\"10\"")},
 	}
 	if err := ValidateEditableFields(fields); err != ErrInvalidFieldType {
 		t.Fatalf("expected ErrInvalidFieldType, got %v", err)
@@ -473,9 +490,9 @@ func TestValidateCredentialBasicAuthMissingFields(t *testing.T) {
 }
 
 func TestValidateCredentialCreditCardValid(t *testing.T) {
-	raw := json.RawMessage(`{"type":"credit-card","number":{"fieldType":"concealed-string","value":"4111 1111 1111 1111"},"expiryDate":{"fieldType":"year-month","value":"2025-12"}}`)
+	raw := json.RawMessage(`{"type":"credit-card","number":{"fieldType":"concealed-string","value":"4111111111111111"},"fullName":{"fieldType":"string","value":"John Doe"},"cardType":{"fieldType":"string","value":"Visa"},"verificationNumber":{"fieldType":"concealed-string","value":"123"},"pin":{"fieldType":"concealed-string","value":"0000"},"expiryDate":{"fieldType":"year-month","value":"2027-08"},"validFrom":{"fieldType":"year-month","value":"2024-02"}}`)
 	if err := ValidateCredential(raw); err != nil {
-		t.Fatalf("expected valid credit-card credential, got %v", err)
+		t.Fatalf("expected valid credit card credential, got %v", err)
 	}
 }
 
@@ -500,10 +517,22 @@ func TestValidateCredentialNoteValid(t *testing.T) {
 	}
 }
 
-func TestValidateCredentialAPIKeyValid(t *testing.T) {
-	raw := json.RawMessage(`{"type":"api-key","key":{"fieldType":"concealed-string","value":"secret-key"},"validFrom":{"fieldType":"date","value":"2025-03-13"}}`)
+func TestValidateCredentialWiFi(t *testing.T) {
+	raw := json.RawMessage(`{
+		"type":"wifi",
+		"ssid":{"fieldType":"string","value":"MyWiFi"},
+		"networkSecurityType":{"fieldType":"wifi-network-security-type","value":"wpa2-personal"},
+		"passphrase":{"fieldType":"concealed-string","value":"secret"},
+		"hidden":{"fieldType":"boolean","value":"false"}
+	}`)
 	if err := ValidateCredential(raw); err != nil {
-		t.Fatalf("expected valid api-key credential, got %v", err)
+		t.Fatalf("expected valid wifi, got %v", err)
+	}
+
+	// WiFi with no fields is valid per spec (all fields are optional)
+	rawEmpty := json.RawMessage(`{"type":"wifi"}`)
+	if err := ValidateCredential(rawEmpty); err != nil {
+		t.Fatalf("expected valid wifi with no fields, got %v", err)
 	}
 }
 
@@ -641,7 +670,8 @@ func TestValidateCredentialSSHKey(t *testing.T) {
 	}
 }
 
-func TestValidateCredentialWiFi(t *testing.T) {
+func TestValidateCredentialWiFi_RejectsNonStringifiedBoolean(t *testing.T) {
+	// Spec: EditableField.value is a string (tstr), including for booleans.
 	raw := json.RawMessage(`{
 		"type":"wifi",
 		"ssid":{"fieldType":"string","value":"MyWiFi"},
@@ -649,14 +679,8 @@ func TestValidateCredentialWiFi(t *testing.T) {
 		"passphrase":{"fieldType":"concealed-string","value":"secret"},
 		"hidden":{"fieldType":"boolean","value":false}
 	}`)
-	if err := ValidateCredential(raw); err != nil {
-		t.Fatalf("expected valid wifi, got %v", err)
-	}
-
-	// WiFi with no fields is valid per spec (all fields are optional)
-	rawEmpty := json.RawMessage(`{"type":"wifi"}`)
-	if err := ValidateCredential(rawEmpty); err != nil {
-		t.Fatalf("expected valid wifi with no fields, got %v", err)
+	if err := ValidateCredential(raw); err == nil {
+		t.Fatalf("expected error for non-stringified boolean value, got nil")
 	}
 }
 

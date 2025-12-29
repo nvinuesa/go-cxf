@@ -155,3 +155,37 @@ func TestBase64URLReferenceEncoding(t *testing.T) {
 		t.Fatalf("EncodeBase64URL mismatch: got %q, want %q", got, ref)
 	}
 }
+
+func TestGenerateCredentialIDAlias(t *testing.T) {
+	id, err := GenerateCredentialID(16)
+	if err != nil {
+		t.Fatalf("GenerateCredentialID() error = %v, want nil", err)
+	}
+	if id == "" {
+		t.Fatalf("expected non-empty identifier")
+	}
+	decoded, err := DecodeBase64URL(id)
+	if err != nil {
+		t.Fatalf("decoded credential id invalid base64url: %v", err)
+	}
+	if len(decoded) != 16 {
+		t.Fatalf("decoded length = %d, want %d", len(decoded), 16)
+	}
+}
+
+func TestGenerateUserIDAlias(t *testing.T) {
+	id, err := GenerateUserID(16)
+	if err != nil {
+		t.Fatalf("GenerateUserID() error = %v, want nil", err)
+	}
+	if id == "" {
+		t.Fatalf("expected non-empty identifier")
+	}
+	decoded, err := DecodeBase64URL(id)
+	if err != nil {
+		t.Fatalf("decoded user id invalid base64url: %v", err)
+	}
+	if len(decoded) != 16 {
+		t.Fatalf("decoded length = %d, want %d", len(decoded), 16)
+	}
+}
