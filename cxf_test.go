@@ -3,6 +3,7 @@ package cxf
 import (
 	"crypto/sha256"
 	"encoding/json"
+	"strings"
 	"testing"
 )
 
@@ -55,6 +56,49 @@ func TestHeaderValidateValid(t *testing.T) {
 	h := makeMinimalHeader()
 	if err := h.Validate(); err != nil {
 		t.Fatalf("expected valid header, got error: %v", err)
+	}
+}
+
+func TestDecodeHeaderJSONStrictOK(t *testing.T) {
+	h := makeMinimalHeader()
+	data, err := h.Marshal()
+	if err != nil {
+		t.Fatalf("marshal error: %v", err)
+	}
+
+	decoded, err := DecodeHeaderJSONStrict(strings.NewReader(string(data)), int64(len(data))+10)
+	if err != nil {
+		t.Fatalf("expected strict decode to succeed, got %v", err)
+	}
+	if decoded.ExporterRpId != h.ExporterRpId {
+		t.Fatalf("exporterRpId mismatch: got %q want %q", decoded.ExporterRpId, h.ExporterRpId)
+	}
+}
+
+func TestDecodeHeaderJSONStrictTrailingData(t *testing.T) {
+	h := makeMinimalHeader()
+	data, err := h.Marshal()
+	if err != nil {
+		t.Fatalf("marshal error: %v", err)
+	}
+
+	// Add a second JSON value after the header.
+	payload := string(data) + " {}"
+	if _, err := DecodeHeaderJSONStrict(strings.NewReader(payload), int64(len(payload))+10); err == nil {
+		t.Fatalf("expected error for trailing data, got nil")
+	}
+}
+
+func TestDecodeHeaderJSONStrictSizeLimit(t *testing.T) {
+	h := makeMinimalHeader()
+	data, err := h.Marshal()
+	if err != nil {
+		t.Fatalf("marshal error: %v", err)
+	}
+
+	// maxBytes too small for the payload.
+	if _, err := DecodeHeaderJSONStrict(strings.NewReader(string(data)), 1); err == nil {
+		t.Fatalf("expected error for size-limited decode, got nil")
 	}
 }
 

@@ -5,6 +5,8 @@ import (
 	"crypto/sha256"
 	"encoding/json"
 	"errors"
+	"fmt"
+	"io"
 	"time"
 )
 
@@ -168,6 +170,42 @@ func validateDateString(s string) bool {
 	}
 	_, err := time.Parse("2006-01-02", s)
 	return err == nil
+}
+
+// DecodeHeaderJSONStrict decodes a CXF Header from JSON with a hard size limit and requires
+// that the input is exactly one JSON document (no trailing data).
+//
+// This is intended for use with untrusted input.
+//
+// Note: This does not (yet) enforce the "required array must be present even if empty" rule from
+// the spec; it focuses on bounded decoding and basic structural correctness.
+func DecodeHeaderJSONStrict(r io.Reader, maxBytes int64) (*Header, error) {
+	if maxBytes <= 0 {
+		return nil, fmt.Errorf("maxBytes must be positive")
+	}
+
+	dec := json.NewDecoder(io.LimitReader(r, maxBytes))
+	dec.DisallowUnknownFields()
+
+	var h Header
+	if err := dec.Decode(&h); err != nil {
+		return nil, err
+	}
+
+	// Ensure there's no trailing non-whitespace data.
+	var extra interface{}
+	if err := dec.Decode(&extra); err != io.EOF {
+		if err == nil {
+			return nil, fmt.Errorf("unexpected trailing data after CXF header JSON")
+		}
+		return nil, err
+	}
+
+	if err := h.Validate(); err != nil {
+		return nil, err
+	}
+
+	return &h, nil
 }
 
 func validateYearMonthString(s string) bool {
