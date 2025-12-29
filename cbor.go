@@ -63,6 +63,21 @@ func UnmarshalHeaderCBORSized(r io.Reader, maxBytes int64) (*Header, error) {
 	return &header, nil
 }
 
+// UnmarshalHeaderCBORStrictSized deserializes CBOR into a Header while enforcing an input size limit,
+// strict single-item framing (no trailing data), and validates the decoded header.
+//
+// This is intended for use with untrusted inputs.
+func UnmarshalHeaderCBORStrictSized(r io.Reader, maxBytes int64) (*Header, error) {
+	var header Header
+	if err := DecodeCBORSized(r, maxBytes, &header); err != nil {
+		return nil, err
+	}
+	if err := header.Validate(); err != nil {
+		return nil, err
+	}
+	return &header, nil
+}
+
 // EncodeCBOR encodes arbitrary data to CBOR format.
 func EncodeCBOR(v interface{}) ([]byte, error) {
 	return cborEncMode.Marshal(v)
