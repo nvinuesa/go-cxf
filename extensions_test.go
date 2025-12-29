@@ -69,7 +69,7 @@ func TestDecodeSharedExtensionMissingAccessorsIsError(t *testing.T) {
 func TestDecodeSharedExtensionAccessorMissingPermissionsIsError(t *testing.T) {
 	ext := Extension{
 		Name: "shared",
-		Data: json.RawMessage(`{"accessors":[{"type":"user","externalId":"abc"}]}`),
+		Data: json.RawMessage(`{"accessors":[{"type":"user","accountId":"abc","name":"User"}]}`),
 	}
 	if _, err := DecodeSharedExtension(ext); err == nil {
 		t.Fatalf("expected error for missing required member permissions, got nil")
@@ -79,7 +79,7 @@ func TestDecodeSharedExtensionAccessorMissingPermissionsIsError(t *testing.T) {
 func TestDecodeSharedExtensionAccessorUnknownTypeIsIgnored(t *testing.T) {
 	ext := Extension{
 		Name: "shared",
-		Data: json.RawMessage(`{"accessors":[{"type":"new-type","permissions":["read"]}]}`),
+		Data: json.RawMessage(`{"accessors":[{"type":"new-type","accountId":"id","name":"name","permissions":["read"]}]}`),
 	}
 	if _, err := DecodeSharedExtension(ext); !errors.Is(err, ErrIgnored) {
 		t.Fatalf("expected ErrIgnored for unknown accessor type, got %v", err)
@@ -89,7 +89,7 @@ func TestDecodeSharedExtensionAccessorUnknownTypeIsIgnored(t *testing.T) {
 func TestDecodeSharedExtensionAccessorUnknownPermissionIsIgnored(t *testing.T) {
 	ext := Extension{
 		Name: "shared",
-		Data: json.RawMessage(`{"accessors":[{"type":"user","permissions":["read","admin"]}]}`),
+		Data: json.RawMessage(`{"accessors":[{"type":"user","accountId":"id","name":"name","permissions":["read","admin"]}]}`),
 	}
 	if _, err := DecodeSharedExtension(ext); !errors.Is(err, ErrIgnored) {
 		t.Fatalf("expected ErrIgnored for unknown permission, got %v", err)
@@ -99,7 +99,8 @@ func TestDecodeSharedExtensionAccessorUnknownPermissionIsIgnored(t *testing.T) {
 func TestValidateSharingAccessorMissingTypeIsError(t *testing.T) {
 	a := SharingAccessor{
 		Type:        "",
-		ExternalID:  "id",
+		AccountID:   "id",
+		Name:        "name",
 		Permissions: []SharingAccessorPermission{SharingAccessorPermissionRead},
 	}
 	if err := ValidateSharingAccessor(a); err == nil {
@@ -110,7 +111,8 @@ func TestValidateSharingAccessorMissingTypeIsError(t *testing.T) {
 func TestValidateSharingAccessorPermissionsPresentEmptyOK(t *testing.T) {
 	a := SharingAccessor{
 		Type:        SharingAccessorTypeUser,
-		ExternalID:  "id",
+		AccountID:   "id",
+		Name:        "name",
 		Permissions: []SharingAccessorPermission{},
 	}
 	if err := ValidateSharingAccessor(a); err != nil {
@@ -124,5 +126,27 @@ func TestValidateSharedExtensionAccessorsPresentEmptyOK(t *testing.T) {
 	}
 	if err := ValidateSharedExtension(s); err != nil {
 		t.Fatalf("expected empty accessors slice to be allowed (present but empty), got %v", err)
+	}
+}
+
+func TestValidateSharingAccessorMissingAccountIDIsError(t *testing.T) {
+	a := SharingAccessor{
+		Type:        SharingAccessorTypeUser,
+		Name:        "name",
+		Permissions: []SharingAccessorPermission{SharingAccessorPermissionRead},
+	}
+	if err := ValidateSharingAccessor(a); err == nil {
+		t.Fatalf("expected error for missing accountId, got nil")
+	}
+}
+
+func TestValidateSharingAccessorMissingNameIsError(t *testing.T) {
+	a := SharingAccessor{
+		Type:        SharingAccessorTypeUser,
+		AccountID:   "id",
+		Permissions: []SharingAccessorPermission{SharingAccessorPermissionRead},
+	}
+	if err := ValidateSharingAccessor(a); err == nil {
+		t.Fatalf("expected error for missing name, got nil")
 	}
 }

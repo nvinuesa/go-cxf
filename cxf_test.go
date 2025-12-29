@@ -499,14 +499,32 @@ func TestValidateEditableFieldCountryCode(t *testing.T) {
 }
 
 func TestValidateEditableFieldSubdivisionCode(t *testing.T) {
-	f := EditableField{FieldType: FieldTypeSubdivisionCode, Value: json.RawMessage("\"US-CA\"")}
-	if err := ValidateEditableField(f); err != nil {
-		t.Fatalf("expected valid subdivision-code, got %v", err)
+	// Valid cases
+	validCodes := []string{"US-CA", "GB-ENG", "FR-75"}
+	for _, code := range validCodes {
+		f := EditableField{FieldType: FieldTypeSubdivisionCode, Value: json.RawMessage(`"` + code + `"`)}
+		if err := ValidateEditableField(f); err != nil {
+			t.Errorf("expected valid subdivision-code %q, got %v", code, err)
+		}
 	}
 
-	f.Value = json.RawMessage("\"USCA\"")
-	if err := ValidateEditableField(f); err != ErrInvalidFieldValue {
-		t.Fatalf("expected ErrInvalidFieldValue for missing dash, got %v", err)
+	// Invalid cases
+	invalidCodes := []string{
+		"USCA",    // Missing dash
+		"us-ca",   // Lowercase country
+		"US-ca",   // Lowercase subdivision
+		"12-CA",   // Numbers in country
+		"US-C!",   // Special chars
+		"USA-CA",  // Country code too long
+		"U-CA",    // Country code too short
+		"US-",     // Subdivision too short
+		"US-1234", // Subdivision too long
+	}
+	for _, code := range invalidCodes {
+		f := EditableField{FieldType: FieldTypeSubdivisionCode, Value: json.RawMessage(`"` + code + `"`)}
+		if err := ValidateEditableField(f); err != ErrInvalidFieldValue {
+			t.Errorf("expected ErrInvalidFieldValue for invalid code %q, got %v", code, err)
+		}
 	}
 }
 
@@ -1025,5 +1043,80 @@ func TestValidateWiFiSecurityTypes(t *testing.T) {
 		if err := ValidateEditableField(f); err != nil {
 			t.Fatalf("expected valid wifi security type %q, got %v", secType, err)
 		}
+	}
+}
+
+func TestValidateCredentialScopeAndroidAppFingerprint(t *testing.T) {
+	// Valid SHA256 (32 bytes) -> Base64URL encoded
+	validSha256 := make([]byte, 32)
+	validSha256Str := EncodeBase64URL(validSha256)
+
+	item := Item{
+		ID:    "valid-id",
+		Title: "Title",
+		Scope: &CredentialScope{
+			AndroidApps: []AndroidAppId{
+				{
+					BundleId: "com.example.app",
+					Certificate: &AndroidAppCertificateFingerprint{
+						Fingerprint: validSha256Str,
+						HashAlg:     "sha256",
+					},
+				},
+			},
+		},
+		Credentials: []json.RawMessage{json.RawMessage(`{"type":"note","content":{"fieldType":"string","value":"note"}}`)},
+	}
+	if err := item.Validate(); err != nil {
+		t.Fatalf("expected valid android app fingerprint, got %v", err)
+	}
+}
+
+func TestValidateCredentialScopeAndroidAppFingerprintInvalidEncoding(t *testing.T) {
+	// Invalid Base64URL (contains non-base64 chars, e.g. spaces or invalid symbols)
+	item := Item{
+		ID:    "valid-id",
+		Title: "Title",
+		Scope: &CredentialScope{
+			AndroidApps: []AndroidAppId{
+				{
+					BundleId: "com.example.app",
+					Certificate: &AndroidAppCertificateFingerprint{
+						Fingerprint: "not-base64-url!",
+						HashAlg:     "sha256",
+					},
+				},
+			},
+		},
+		Credentials: []json.RawMessage{json.RawMessage(`{"type":"note","content":{"fieldType":"string","value":"note"}}`)},
+	}
+	if err := item.Validate(); err != ErrInvalidFormat {
+		t.Fatalf("expected ErrInvalidFormat for invalid base64url fingerprint, got %v", err)
+	}
+}
+
+func TestValidateCredentialScopeAndroidAppFingerprintInvalidLength(t *testing.T) {
+	// Valid Base64URL but wrong length for SHA256 (e.g. 31 bytes)
+	invalidLen := make([]byte, 31)
+	invalidLenStr := EncodeBase64URL(invalidLen)
+
+	item := Item{
+		ID:    "valid-id",
+		Title: "Title",
+		Scope: &CredentialScope{
+			AndroidApps: []AndroidAppId{
+				{
+					BundleId: "com.example.app",
+					Certificate: &AndroidAppCertificateFingerprint{
+						Fingerprint: invalidLenStr,
+						HashAlg:     "sha256",
+					},
+				},
+			},
+		},
+		Credentials: []json.RawMessage{json.RawMessage(`{"type":"note","content":{"fieldType":"string","value":"note"}}`)},
+	}
+	if err := item.Validate(); err != ErrInvalidFormat {
+		t.Fatalf("expected ErrInvalidFormat for wrong length fingerprint, got %v", err)
 	}
 }

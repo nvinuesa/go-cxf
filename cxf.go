@@ -4,7 +4,6 @@ import (
 	"crypto/sha256"
 	"crypto/subtle"
 	"crypto/x509"
-	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -223,8 +222,8 @@ func validateCredentialScope(scope *CredentialScope) error {
 		if fp == "" || alg == "" {
 			return ErrMissingFields
 		}
-		// Expect hex without separators (common CXF convention). Reject non-hex.
-		b, err := hex.DecodeString(fp)
+		// Spec: fingerprint is b64url.
+		b, err := DecodeBase64URL(fp)
 		if err != nil {
 			return ErrInvalidFormat
 		}
@@ -468,16 +467,28 @@ func validateCountryCodeString(s string) bool {
 }
 
 func validateSubdivisionCodeString(s string) bool {
-	if len(s) < 4 {
+	// ISO 3166-2 format: 2 letters (country), hyphen, 1-3 alphanumeric chars (subdivision)
+	if len(s) < 4 || len(s) > 6 {
 		return false
 	}
-	dash := 0
-	for i := 0; i < len(s); i++ {
-		if s[i] == '-' {
-			dash++
+	// First two chars must be uppercase letters
+	if s[0] < 'A' || s[0] > 'Z' || s[1] < 'A' || s[1] > 'Z' {
+		return false
+	}
+	// Third char must be hyphen
+	if s[2] != '-' {
+		return false
+	}
+	// Remaining chars must be alphanumeric (uppercase)
+	for i := 3; i < len(s); i++ {
+		c := s[i]
+		isLetter := c >= 'A' && c <= 'Z'
+		isDigit := c >= '0' && c <= '9'
+		if !isLetter && !isDigit {
+			return false
 		}
 	}
-	return dash == 1
+	return true
 }
 
 func parseEditableFieldStringValue(raw json.RawMessage) (string, error) {
@@ -1533,7 +1544,8 @@ type SharedExtension struct {
 // SharingAccessor identifies an entity that may access a shared item/collection.
 type SharingAccessor struct {
 	Type        SharingAccessorType         `json:"type"`
-	ExternalID  string                      `json:"externalId,omitempty"`
+	AccountID   string                      `json:"accountId"`
+	Name        string                      `json:"name"`
 	Permissions []SharingAccessorPermission `json:"permissions"`
 }
 
@@ -1547,8 +1559,13 @@ const (
 	SharingAccessorTypeUser  SharingAccessorType = "user"
 	SharingAccessorTypeGroup SharingAccessorType = "group"
 
-	SharingAccessorPermissionRead  SharingAccessorPermission = "read"
-	SharingAccessorPermissionWrite SharingAccessorPermission = "write"
+	SharingAccessorPermissionRead       SharingAccessorPermission = "read"
+	SharingAccessorPermissionReadSecret SharingAccessorPermission = "readSecret"
+	SharingAccessorPermissionUpdate     SharingAccessorPermission = "update"
+	SharingAccessorPermissionCreate     SharingAccessorPermission = "create"
+	SharingAccessorPermissionDelete     SharingAccessorPermission = "delete"
+	SharingAccessorPermissionShare      SharingAccessorPermission = "share"
+	SharingAccessorPermissionManage     SharingAccessorPermission = "manage"
 )
 
 // DecodeSharedExtension attempts to decode a `shared` extension payload from an Extension.
@@ -1588,9 +1605,13 @@ func ValidateSharedExtension(s SharedExtension) error {
 }
 
 func ValidateSharingAccessor(a SharingAccessor) error {
-	if a.Type == "" {
+	if a.Type == "" || a.AccountID == "" || a.Name == "" {
 		return ErrMissingFields
 	}
+	if err := ValidateIdentifier(a.AccountID); err != nil {
+		return err
+	}
+
 	switch a.Type {
 	case SharingAccessorTypeUser, SharingAccessorTypeGroup:
 		// ok
@@ -1605,7 +1626,10 @@ func ValidateSharingAccessor(a SharingAccessor) error {
 	}
 	for _, p := range a.Permissions {
 		switch p {
-		case SharingAccessorPermissionRead, SharingAccessorPermissionWrite:
+		case SharingAccessorPermissionRead, SharingAccessorPermissionReadSecret,
+			SharingAccessorPermissionUpdate, SharingAccessorPermissionCreate,
+			SharingAccessorPermissionDelete, SharingAccessorPermissionShare,
+			SharingAccessorPermissionManage:
 			// ok
 		default:
 			// Unknown enum value => ignore per CXF forward-compat rules.
