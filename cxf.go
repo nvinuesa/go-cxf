@@ -2,10 +2,12 @@ package cxf
 
 import (
 	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
+	"net/url"
 	"strconv"
 	"strings"
 	"time"
@@ -175,6 +177,72 @@ func validateDateString(s string) bool {
 	}
 	_, err := time.Parse("2006-01-02", s)
 	return err == nil
+}
+
+func validateCredentialScope(scope *CredentialScope) error {
+	if scope == nil {
+		return nil
+	}
+
+	// Spec: required arrays must be present even if empty. In typed Go structs we can’t
+	// detect JSON member presence here, but we can still validate contents if present.
+	// Additionally, enforce strict URL parsing and Android cert fingerprint constraints.
+
+	for _, u := range scope.Urls {
+		if strings.TrimSpace(u) == "" {
+			return ErrInvalidFormat
+		}
+		pu, err := url.Parse(u)
+		if err != nil {
+			return ErrInvalidFormat
+		}
+		// Require absolute URLs with scheme + host (avoid relative URLs, path-only, etc).
+		if pu.Scheme == "" || pu.Host == "" {
+			return ErrInvalidFormat
+		}
+		// Restrict to typical web schemes for credential scopes.
+		switch strings.ToLower(pu.Scheme) {
+		case "https", "http":
+			// ok (spec/vend implementations generally allow these)
+		default:
+			return ErrInvalidFormat
+		}
+	}
+
+	for _, app := range scope.AndroidApps {
+		if strings.TrimSpace(app.BundleId) == "" {
+			return ErrMissingFields
+		}
+		if app.Certificate == nil {
+			continue
+		}
+		fp := strings.TrimSpace(app.Certificate.Fingerprint)
+		alg := strings.ToLower(strings.TrimSpace(app.Certificate.HashAlg))
+		if fp == "" || alg == "" {
+			return ErrMissingFields
+		}
+		// Expect hex without separators (common CXF convention). Reject non-hex.
+		b, err := hex.DecodeString(fp)
+		if err != nil {
+			return ErrInvalidFormat
+		}
+		// Enforce digest length by algorithm.
+		switch alg {
+		case "sha256":
+			if len(b) != 32 {
+				return ErrInvalidFormat
+			}
+		case "sha512":
+			if len(b) != 64 {
+				return ErrInvalidFormat
+			}
+		default:
+			// Unknown enum/alg => ignore certificate per forward-compat rules.
+			return ErrIgnored
+		}
+	}
+
+	return nil
 }
 
 // DecodeHeaderJSONStrict decodes a CXF Header from JSON with a hard size limit and requires
@@ -1530,6 +1598,17 @@ func (i *Item) Validate() error {
 	}
 	if err := ValidateIdentifier(i.ID); err != nil {
 		return err
+	}
+	if i.Scope != nil {
+		if err := validateCredentialScope(i.Scope); err != nil {
+			// Per forward-compat rules, ignore unknown enum values when OPTIONAL.
+			// Item.scope is optional; if scope contains unknown enum values we treat it as absent.
+			if errors.Is(err, ErrIgnored) {
+				i.Scope = nil
+			} else {
+				return err
+			}
+		}
 	}
 	if len(i.Credentials) == 0 {
 		return ErrMissingFields
