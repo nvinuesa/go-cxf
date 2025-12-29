@@ -182,8 +182,8 @@ func validateDateString(s string) bool {
 //
 // This is intended for use with untrusted input.
 //
-// Note: This does not (yet) enforce the "required array must be present even if empty" rule from
-// the spec; it focuses on bounded decoding and basic structural correctness.
+// Note: In addition to top-level required members, this enforces the spec rule that required
+// arrays must be present even if empty for nested structures we validate here.
 func DecodeHeaderJSONStrict(r io.Reader, maxBytes int64) (*Header, error) {
 	if maxBytes <= 0 {
 		return nil, fmt.Errorf("maxBytes must be positive")
@@ -215,6 +215,58 @@ func DecodeHeaderJSONStrict(r io.Reader, maxBytes int64) (*Header, error) {
 	for _, k := range []string{"version", "exporterRpId", "exporterDisplayName", "timestamp", "accounts"} {
 		if _, ok := raw[k]; !ok {
 			return nil, fmt.Errorf("missing required header member %q", k)
+		}
+	}
+
+	// Enforce required nested arrays presence (spec §2.1.2).
+	// For arrays that are REQUIRED: the member must be present, even if empty.
+	accountsRaw := raw["accounts"]
+	var accountsArr []json.RawMessage
+	if err := json.Unmarshal(accountsRaw, &accountsArr); err != nil {
+		return nil, ErrInvalidFormat
+	}
+	for ai, accRaw := range accountsArr {
+		var accObj map[string]json.RawMessage
+		if err := json.Unmarshal(accRaw, &accObj); err != nil {
+			return nil, ErrInvalidFormat
+		}
+
+		// Account.collections and Account.items are required arrays.
+		if _, ok := accObj["collections"]; !ok {
+			return nil, fmt.Errorf("missing required member %q at accounts[%d]", "collections", ai)
+		}
+		if _, ok := accObj["items"]; !ok {
+			return nil, fmt.Errorf("missing required member %q at accounts[%d]", "items", ai)
+		}
+
+		// Validate required arrays within Account.items -> Item.credentials.
+		var itemsArr []json.RawMessage
+		if err := json.Unmarshal(accObj["items"], &itemsArr); err != nil {
+			return nil, ErrInvalidFormat
+		}
+		for ii, itemRaw := range itemsArr {
+			var itemObj map[string]json.RawMessage
+			if err := json.Unmarshal(itemRaw, &itemObj); err != nil {
+				return nil, ErrInvalidFormat
+			}
+			if _, ok := itemObj["credentials"]; !ok {
+				return nil, fmt.Errorf("missing required member %q at accounts[%d].items[%d]", "credentials", ai, ii)
+			}
+		}
+
+		// Validate required arrays within Account.collections -> Collection.items.
+		var colsArr []json.RawMessage
+		if err := json.Unmarshal(accObj["collections"], &colsArr); err != nil {
+			return nil, ErrInvalidFormat
+		}
+		for ci, colRaw := range colsArr {
+			var colObj map[string]json.RawMessage
+			if err := json.Unmarshal(colRaw, &colObj); err != nil {
+				return nil, ErrInvalidFormat
+			}
+			if _, ok := colObj["items"]; !ok {
+				return nil, fmt.Errorf("missing required member %q at accounts[%d].collections[%d]", "items", ai, ci)
+			}
 		}
 	}
 

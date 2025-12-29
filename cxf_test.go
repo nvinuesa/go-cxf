@@ -101,6 +101,118 @@ func TestDecodeHeaderJSONStrictMissingRequiredKeyVersion(t *testing.T) {
 	}
 }
 
+func TestDecodeHeaderJSONStrictMissingRequiredNestedAccountCollections(t *testing.T) {
+	// Spec (§2.1.2): required arrays must be present even if empty.
+	// Account.collections is required.
+	payload := `{
+		"version":{"major":1,"minor":0},
+		"exporterRpId":"exporter.example.com",
+		"exporterDisplayName":"Exporter",
+		"timestamp":1710000000,
+		"accounts":[
+			{
+				"id":"YWNjb3VudC0x",
+				"username":"user",
+				"email":"user@example.com",
+				"items":[
+					{
+						"id":"aXRlbS0x",
+						"title":"Test Item",
+						"credentials":[{"type":"totp","secret":"JBSWY3DPEHPK3PXP","algorithm":"sha1","period":30,"digits":6}]
+					}
+				]
+			}
+		]
+	}`
+	if _, err := DecodeHeaderJSONStrict(strings.NewReader(payload), int64(len(payload))+10); err == nil {
+		t.Fatalf("expected error for missing required nested member collections, got nil")
+	}
+}
+
+func TestDecodeHeaderJSONStrictMissingRequiredNestedAccountItems(t *testing.T) {
+	// Spec (§2.1.2): required arrays must be present even if empty.
+	// Account.items is required.
+	payload := `{
+		"version":{"major":1,"minor":0},
+		"exporterRpId":"exporter.example.com",
+		"exporterDisplayName":"Exporter",
+		"timestamp":1710000000,
+		"accounts":[
+			{
+				"id":"YWNjb3VudC0x",
+				"username":"user",
+				"email":"user@example.com",
+				"collections":[]
+			}
+		]
+	}`
+	if _, err := DecodeHeaderJSONStrict(strings.NewReader(payload), int64(len(payload))+10); err == nil {
+		t.Fatalf("expected error for missing required nested member items, got nil")
+	}
+}
+
+func TestDecodeHeaderJSONStrictMissingRequiredNestedItemCredentials(t *testing.T) {
+	// Spec (§2.1.2): required arrays must be present even if empty.
+	// Item.credentials is required.
+	payload := `{
+		"version":{"major":1,"minor":0},
+		"exporterRpId":"exporter.example.com",
+		"exporterDisplayName":"Exporter",
+		"timestamp":1710000000,
+		"accounts":[
+			{
+				"id":"YWNjb3VudC0x",
+				"username":"user",
+				"email":"user@example.com",
+				"collections":[],
+				"items":[
+					{
+						"id":"aXRlbS0x",
+						"title":"Test Item"
+					}
+				]
+			}
+		]
+	}`
+	if _, err := DecodeHeaderJSONStrict(strings.NewReader(payload), int64(len(payload))+10); err == nil {
+		t.Fatalf("expected error for missing required nested member credentials, got nil")
+	}
+}
+
+func TestDecodeHeaderJSONStrictMissingRequiredNestedCollectionItems(t *testing.T) {
+	// Spec (§2.1.2): required arrays must be present even if empty.
+	// Collection.items is required.
+	payload := `{
+		"version":{"major":1,"minor":0},
+		"exporterRpId":"exporter.example.com",
+		"exporterDisplayName":"Exporter",
+		"timestamp":1710000000,
+		"accounts":[
+			{
+				"id":"YWNjb3VudC0x",
+				"username":"user",
+				"email":"user@example.com",
+				"collections":[
+					{
+						"id":"Y29sLTE",
+						"title":"Collection"
+					}
+				],
+				"items":[
+					{
+						"id":"aXRlbS0x",
+						"title":"Test Item",
+						"credentials":[{"type":"totp","secret":"JBSWY3DPEHPK3PXP","algorithm":"sha1","period":30,"digits":6}]
+					}
+				]
+			}
+		]
+	}`
+	if _, err := DecodeHeaderJSONStrict(strings.NewReader(payload), int64(len(payload))+10); err == nil {
+		t.Fatalf("expected error for missing required nested member items on collection, got nil")
+	}
+}
+
 func TestDecodeHeaderJSONStrictTrailingData(t *testing.T) {
 	h := makeMinimalHeader()
 	data, err := h.Marshal()
