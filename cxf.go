@@ -2,6 +2,7 @@ package cxf
 
 import (
 	"crypto/sha256"
+	"crypto/subtle"
 	"crypto/x509"
 	"encoding/hex"
 	"encoding/json"
@@ -1270,11 +1271,16 @@ func ComputeIntegrityHash(data []byte) string {
 }
 
 // ValidateIntegrityHash compares the provided integrity hash against the SHA-256 of data.
+//
+// Note: while integrity hashes are not typically secret, using constant-time comparison avoids
+// accidental timing side-channels if this is ever reused in a sensitive context.
 func ValidateIntegrityHash(data []byte, integrityHash string) error {
 	if integrityHash == "" {
 		return ErrMissingFields
 	}
-	if ComputeIntegrityHash(data) != integrityHash {
+
+	got := ComputeIntegrityHash(data)
+	if subtle.ConstantTimeCompare([]byte(got), []byte(integrityHash)) != 1 {
 		return ErrInvalidCredential
 	}
 	return nil
