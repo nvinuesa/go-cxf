@@ -277,9 +277,11 @@ func TestValidateEditableFieldNumber(t *testing.T) {
 }
 
 func TestValidateEditableFieldInvalidType(t *testing.T) {
-	f := EditableField{FieldType: "unknown-type", Value: json.RawMessage("true")}
-	if err := ValidateEditableField(f); err != ErrInvalidFieldType {
-		t.Fatalf("expected ErrInvalidFieldType, got %v", err)
+	// Spec (§2.1.1): unknown enum values should be ignored by importers.
+	// Library signals this via ErrIgnored.
+	f := EditableField{FieldType: "unknown-type", Value: json.RawMessage("\"true\"")}
+	if err := ValidateEditableField(f); err != ErrIgnored {
+		t.Fatalf("expected ErrIgnored, got %v", err)
 	}
 }
 
@@ -303,8 +305,10 @@ func TestValidateEditableFieldsStopsOnError(t *testing.T) {
 		{FieldType: "bad-type", Value: json.RawMessage("\"true\"")},
 		{FieldType: FieldTypeNumber, Value: json.RawMessage("\"10\"")},
 	}
-	if err := ValidateEditableFields(fields); err != ErrInvalidFieldType {
-		t.Fatalf("expected ErrInvalidFieldType, got %v", err)
+	// Spec (§2.1.1): unknown enum values should be ignored by importers.
+	// Library signals this via ErrIgnored and stops on the first such error.
+	if err := ValidateEditableFields(fields); err != ErrIgnored {
+		t.Fatalf("expected ErrIgnored, got %v", err)
 	}
 }
 
@@ -384,6 +388,14 @@ func TestValidateCredentialTOTPValid(t *testing.T) {
 	raw := minimalTOTP()
 	if err := ValidateCredential(raw); err != nil {
 		t.Fatalf("expected valid TOTP credential, got %v", err)
+	}
+}
+
+func TestValidateCredentialTOTPIgnoreUnknownAlgorithm(t *testing.T) {
+	// Spec (§3.3.16): importers MUST ignore TOTP entries with unknown algorithm values.
+	raw := json.RawMessage(`{"type":"totp","secret":"JBSWY3DPEHPK3PXP","algorithm":"sha999","period":30,"digits":6}`)
+	if err := ValidateCredential(raw); err != nil {
+		t.Fatalf("expected unknown-algorithm TOTP to be ignored (nil error), got %v", err)
 	}
 }
 
@@ -712,6 +724,19 @@ func TestValidateCredentialUnknownType(t *testing.T) {
 	raw := json.RawMessage(`{"type":"unknown-future-type","someField":"someValue"}`)
 	if err := ValidateCredential(raw); err != nil {
 		t.Fatalf("expected unknown credential type to pass through, got %v", err)
+	}
+}
+
+func TestValidateCredentialBasicAuthIgnoresUnknownEditableFieldType(t *testing.T) {
+	// Spec (§2.1.1): if an OPTIONAL member contains an unknown enum value,
+	// the member should be ignored as if not present.
+	raw := json.RawMessage(`{
+		"type":"basic-auth",
+		"username":{"fieldType":"string","value":"user"},
+		"password":{"fieldType":"unknown-type","value":"pass"}
+	}`)
+	if err := ValidateCredential(raw); err != nil {
+		t.Fatalf("expected credential to validate by ignoring unknown fieldType in optional member, got %v", err)
 	}
 }
 

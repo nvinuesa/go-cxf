@@ -30,6 +30,10 @@ var (
 	ErrInvalidFieldValue     = errors.New("invalid editable field value for type")
 	ErrInvalidCredential     = errors.New("invalid credential")
 	ErrInvalidCredentialType = errors.New("invalid credential type")
+
+	// ErrIgnored indicates a structure should be ignored per CXF enum forward-compat rules.
+	// Callers should treat this as non-fatal for optional members/entries.
+	ErrIgnored = errors.New("ignored per CXF forward-compat rules")
 )
 
 // Version encodes the CXF version information.
@@ -261,7 +265,9 @@ func ValidateEditableField(f EditableField) error {
 		return ErrMissingFields
 	}
 	if _, ok := validFieldTypes[f.FieldType]; !ok {
-		return ErrInvalidFieldType
+		// Spec (§2.1.1): unknown enum values should be ignored (as if not provided) when OPTIONAL.
+		// We signal this to callers so they can ignore the field/containing member appropriately.
+		return ErrIgnored
 	}
 	if f.ID != "" {
 		if err := ValidateIdentifier(f.ID); err != nil {
@@ -326,6 +332,10 @@ func ValidateEditableFields(fields []EditableField) error {
 }
 
 // ValidateEditableFieldWithExpectedType enforces both field validity and a specific expected fieldType.
+//
+// Spec note: If the field's fieldType is unknown, ValidateEditableField returns ErrIgnored, which
+// propagates here. Callers should interpret ErrIgnored as "act as though the member was not provided"
+// when the containing member is OPTIONAL.
 func ValidateEditableFieldWithExpectedType(f EditableField, expectedType string) error {
 	if err := ValidateEditableField(f); err != nil {
 		return err
@@ -890,7 +900,8 @@ func ValidateTOTPCredential(c TOTPCredential) error {
 		return ErrMissingFields
 	}
 	if _, ok := totpAllowedAlgorithms[c.Algorithm]; !ok {
-		return ErrInvalidCredential
+		// Spec (§3.3.16): importers MUST ignore TOTP entries with unknown algorithm values.
+		return ErrIgnored
 	}
 	if _, ok := totpAllowedDigits[c.Digits]; !ok {
 		return ErrInvalidCredential
@@ -1054,19 +1065,38 @@ func ValidateCredential(raw json.RawMessage) error {
 		if err := json.Unmarshal(raw, &c); err != nil {
 			return ErrInvalidCredential
 		}
-		return ValidateBasicAuthCredential(c)
+		if err := ValidateBasicAuthCredential(c); err != nil {
+			// Unknown field types inside OPTIONAL fields should be ignored, not fatal.
+			if errors.Is(err, ErrIgnored) {
+				return nil
+			}
+			return err
+		}
+		return nil
 	case CredentialTypeAPIKey:
 		var c APIKeyCredential
 		if err := json.Unmarshal(raw, &c); err != nil {
 			return ErrInvalidCredential
 		}
-		return ValidateAPIKeyCredential(c)
+		if err := ValidateAPIKeyCredential(c); err != nil {
+			if errors.Is(err, ErrIgnored) {
+				return nil
+			}
+			return err
+		}
+		return nil
 	case CredentialTypeAddress:
 		var c AddressCredential
 		if err := json.Unmarshal(raw, &c); err != nil {
 			return ErrInvalidCredential
 		}
-		return ValidateAddressCredential(c)
+		if err := ValidateAddressCredential(c); err != nil {
+			if errors.Is(err, ErrIgnored) {
+				return nil
+			}
+			return err
+		}
+		return nil
 	case CredentialTypeGeneratedPassword:
 		var c GeneratedPasswordCredential
 		if err := json.Unmarshal(raw, &c); err != nil {
@@ -1078,31 +1108,61 @@ func ValidateCredential(raw json.RawMessage) error {
 		if err := json.Unmarshal(raw, &c); err != nil {
 			return ErrInvalidCredential
 		}
-		return ValidateIdentityDocumentCredential(c)
+		if err := ValidateIdentityDocumentCredential(c); err != nil {
+			if errors.Is(err, ErrIgnored) {
+				return nil
+			}
+			return err
+		}
+		return nil
 	case CredentialTypeDriversLicense:
 		var c DriversLicenseCredential
 		if err := json.Unmarshal(raw, &c); err != nil {
 			return ErrInvalidCredential
 		}
-		return ValidateDriversLicenseCredential(c)
+		if err := ValidateDriversLicenseCredential(c); err != nil {
+			if errors.Is(err, ErrIgnored) {
+				return nil
+			}
+			return err
+		}
+		return nil
 	case CredentialTypePassport:
 		var c PassportCredential
 		if err := json.Unmarshal(raw, &c); err != nil {
 			return ErrInvalidCredential
 		}
-		return ValidatePassportCredential(c)
+		if err := ValidatePassportCredential(c); err != nil {
+			if errors.Is(err, ErrIgnored) {
+				return nil
+			}
+			return err
+		}
+		return nil
 	case CredentialTypePersonName:
 		var c PersonNameCredential
 		if err := json.Unmarshal(raw, &c); err != nil {
 			return ErrInvalidCredential
 		}
-		return ValidatePersonNameCredential(c)
+		if err := ValidatePersonNameCredential(c); err != nil {
+			if errors.Is(err, ErrIgnored) {
+				return nil
+			}
+			return err
+		}
+		return nil
 	case CredentialTypeCustomFields:
 		var c CustomFieldsCredential
 		if err := json.Unmarshal(raw, &c); err != nil {
 			return ErrInvalidCredential
 		}
-		return ValidateCustomFieldsCredential(c)
+		if err := ValidateCustomFieldsCredential(c); err != nil {
+			if errors.Is(err, ErrIgnored) {
+				return nil
+			}
+			return err
+		}
+		return nil
 	case CredentialTypeSSHKey:
 		var c SSHKeyCredential
 		if err := json.Unmarshal(raw, &c); err != nil {
@@ -1114,7 +1174,13 @@ func ValidateCredential(raw json.RawMessage) error {
 		if err := json.Unmarshal(raw, &c); err != nil {
 			return ErrInvalidCredential
 		}
-		return ValidateWiFiCredential(c)
+		if err := ValidateWiFiCredential(c); err != nil {
+			if errors.Is(err, ErrIgnored) {
+				return nil
+			}
+			return err
+		}
+		return nil
 	case CredentialTypeItemReference:
 		var c ItemReferenceCredential
 		if err := json.Unmarshal(raw, &c); err != nil {
@@ -1126,7 +1192,14 @@ func ValidateCredential(raw json.RawMessage) error {
 		if err := json.Unmarshal(raw, &c); err != nil {
 			return ErrInvalidCredential
 		}
-		return ValidateTOTPCredential(c)
+		if err := ValidateTOTPCredential(c); err != nil {
+			if errors.Is(err, ErrIgnored) {
+				// Unknown algorithm => ignore TOTP credential per spec.
+				return nil
+			}
+			return err
+		}
+		return nil
 	case CredentialTypePasskey:
 		var c PasskeyCredential
 		if err := json.Unmarshal(raw, &c); err != nil {
@@ -1144,13 +1217,25 @@ func ValidateCredential(raw json.RawMessage) error {
 		if err := json.Unmarshal(raw, &c); err != nil {
 			return ErrInvalidCredential
 		}
-		return ValidateCreditCardCredential(c)
+		if err := ValidateCreditCardCredential(c); err != nil {
+			if errors.Is(err, ErrIgnored) {
+				return nil
+			}
+			return err
+		}
+		return nil
 	case CredentialTypeNote:
 		var c NoteCredential
 		if err := json.Unmarshal(raw, &c); err != nil {
 			return ErrInvalidCredential
 		}
-		return ValidateNoteCredential(c)
+		if err := ValidateNoteCredential(c); err != nil {
+			if errors.Is(err, ErrIgnored) {
+				return nil
+			}
+			return err
+		}
+		return nil
 	default:
 		// Per spec: "Importing providers MAY attempt to store unknown credential types"
 		// Unknown credential types are passed through without error
