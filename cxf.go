@@ -2,6 +2,7 @@ package cxf
 
 import (
 	"crypto/sha256"
+	"crypto/x509"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
@@ -243,6 +244,72 @@ func validateCredentialScope(scope *CredentialScope) error {
 	}
 
 	return nil
+}
+
+func validatePKCS8PrivateKeyDer(der []byte) error {
+	// Minimal, safe sanity check: ensure this is parseable as PKCS#8.
+	// This avoids downstream consumers assuming DER correctness.
+	//
+	// We deliberately don't attempt to validate algorithm-specific parameters here.
+	if len(der) == 0 {
+		return ErrMissingFields
+	}
+	if _, err := x509.ParsePKCS8PrivateKey(der); err != nil {
+		return ErrInvalidCredential
+	}
+	return nil
+}
+
+// ValidateCredentialStrict performs additional, security-focused validation that may be more strict
+// than ValidateCredential, and may reject payloads that are otherwise structurally valid.
+//
+// Rationale: Parsing PKCS#8 strictly can break existing exporters/tests that store opaque blobs.
+// Keeping it in a separate entrypoint allows consumers to opt in to stronger validation.
+func ValidateCredentialStrict(raw json.RawMessage) error {
+	// First run the normal validator (includes forward-compat ignore rules).
+	if err := ValidateCredential(raw); err != nil {
+		return err
+	}
+
+	// Then run strict type-specific checks where feasible.
+	var env struct {
+		Type string `json:"type"`
+	}
+	if err := json.Unmarshal(raw, &env); err != nil {
+		return ErrInvalidCredential
+	}
+
+	switch env.Type {
+	case CredentialTypePasskey:
+		var c PasskeyCredential
+		if err := json.Unmarshal(raw, &c); err != nil {
+			return ErrInvalidCredential
+		}
+		keyDer, err := DecodeBase64URLMaxDecoded(c.Key, 8192)
+		if err != nil {
+			return ErrInvalidCredential
+		}
+		if err := validatePKCS8PrivateKeyDer(keyDer); err != nil {
+			return err
+		}
+		return nil
+	case CredentialTypeSSHKey:
+		var c SSHKeyCredential
+		if err := json.Unmarshal(raw, &c); err != nil {
+			return ErrInvalidCredential
+		}
+		der, err := DecodeBase64URLMaxDecoded(c.PrivateKey, 65536)
+		if err != nil {
+			return ErrInvalidCredential
+		}
+		if err := validatePKCS8PrivateKeyDer(der); err != nil {
+			return err
+		}
+		return nil
+	default:
+		// Unknown/other types: no extra strict checks currently.
+		return nil
+	}
 }
 
 // DecodeHeaderJSONStrict decodes a CXF Header from JSON with a hard size limit and requires
@@ -970,20 +1037,25 @@ func ValidateSSHKeyCredential(c SSHKeyCredential) error {
 		return ErrMissingFields
 	}
 	// privateKey must be valid base64url; additionally enforce a max decoded size to mitigate DoS.
-	if err := ValidateBase64URLMaxDecoded(c.PrivateKey, 65536); err != nil {
+	if _, err := DecodeBase64URLMaxDecoded(c.PrivateKey, 65536); err != nil {
 		return ErrInvalidCredential
 	}
+	// NOTE: PKCS#8 parsing is intentionally NOT enforced here to avoid breaking existing
+	// exporters/consumers that store opaque blobs. Use ValidateCredentialStrict for PKCS#8 checks.
+
 	// Optional date fields
-	for _, f := range []*EditableField{c.CreationDate, c.ExpiryDate} {
-		if f != nil {
-			if err := ValidateEditableFieldWithExpectedType(*f, FieldTypeDate); err != nil {
-				return err
-			}
+	if c.CreationDate != nil {
+		if err := ValidateEditableFieldWithExpectedType(*c.CreationDate, FieldTypeDate); err != nil {
+			return err
 		}
 	}
-	// Optional string field
+	if c.ExpiryDate != nil {
+		if err := ValidateEditableFieldWithExpectedType(*c.ExpiryDate, FieldTypeDate); err != nil {
+			return err
+		}
+	}
 	if c.KeyGenerationSource != nil {
-		if err := ValidateEditableFieldWithExpectedType(*c.KeyGenerationSource, FieldTypeString); err != nil {
+		if err := ValidateEditableField(*c.KeyGenerationSource); err != nil {
 			return err
 		}
 	}
@@ -1070,9 +1142,12 @@ func ValidatePasskeyCredential(c PasskeyCredential) error {
 	if _, err := DecodeBase64URLMaxDecoded(c.UserHandle, 64); err != nil {
 		return ErrInvalidCredential
 	}
-	if _, err := DecodeBase64URLMaxDecoded(c.Key, 8192); err != nil {
+	_, err := DecodeBase64URLMaxDecoded(c.Key, 8192)
+	if err != nil {
 		return ErrInvalidCredential
 	}
+	// NOTE: PKCS#8 parsing is intentionally NOT enforced here to avoid breaking existing
+	// exporters/consumers that store opaque blobs. Use ValidateCredentialStrict for PKCS#8 checks.
 	if c.Fido2Extensions != nil {
 		if err := validateFido2Extensions(c.Fido2Extensions); err != nil {
 			return err
