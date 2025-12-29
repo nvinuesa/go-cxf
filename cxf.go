@@ -901,8 +901,8 @@ func ValidateSSHKeyCredential(c SSHKeyCredential) error {
 	if c.KeyType == "" || c.PrivateKey == "" {
 		return ErrMissingFields
 	}
-	// privateKey must be valid base64url
-	if err := ValidateBase64URL(c.PrivateKey); err != nil {
+	// privateKey must be valid base64url; additionally enforce a max decoded size to mitigate DoS.
+	if err := ValidateBase64URLMaxDecoded(c.PrivateKey, 65536); err != nil {
 		return ErrInvalidCredential
 	}
 	// Optional date fields
@@ -997,10 +997,12 @@ func ValidatePasskeyCredential(c PasskeyCredential) error {
 	if err := ValidateIdentifier(c.CredentialID); err != nil {
 		return err
 	}
-	if _, err := DecodeBase64URL(c.UserHandle); err != nil {
+	// These fields are base64url-encoded and come from untrusted input; enforce reasonable
+	// maximum decoded sizes to mitigate memory/DoS attacks.
+	if _, err := DecodeBase64URLMaxDecoded(c.UserHandle, 64); err != nil {
 		return ErrInvalidCredential
 	}
-	if _, err := DecodeBase64URL(c.Key); err != nil {
+	if _, err := DecodeBase64URLMaxDecoded(c.Key, 8192); err != nil {
 		return ErrInvalidCredential
 	}
 	if c.Fido2Extensions != nil {
@@ -1021,7 +1023,7 @@ func validateFido2Extensions(ext *Fido2Extensions) error {
 			return ErrMissingFields
 		}
 		for _, v := range []string{ext.HmacCredentials.CredWithUV, ext.HmacCredentials.CredWithoutUV} {
-			decoded, err := DecodeBase64URL(v)
+			decoded, err := DecodeBase64URLMaxDecoded(v, 32)
 			if err != nil {
 				return ErrInvalidCredential
 			}
@@ -1032,7 +1034,8 @@ func validateFido2Extensions(ext *Fido2Extensions) error {
 	}
 
 	if ext.CredBlob != "" {
-		if err := ValidateBase64URL(ext.CredBlob); err != nil {
+		// credBlob is opaque but should still be bounded.
+		if err := ValidateBase64URLMaxDecoded(ext.CredBlob, 65536); err != nil {
 			return ErrInvalidCredential
 		}
 	}
@@ -1041,7 +1044,17 @@ func validateFido2Extensions(ext *Fido2Extensions) error {
 		if ext.LargeBlob.UncompressedSize == 0 || ext.LargeBlob.Data == "" {
 			return ErrMissingFields
 		}
-		if _, err := DecodeBase64URL(ext.LargeBlob.Data); err != nil {
+		// Enforce a hard cap based on declared uncompressed size plus a small overhead.
+		// (We don't decompress here; this is just a decode-size guard.)
+		maxDecoded := int(ext.LargeBlob.UncompressedSize)
+		if maxDecoded < 0 {
+			return ErrInvalidCredential
+		}
+		if maxDecoded > 1024*1024 {
+			// Prevent absurd allocations even if the declared size is huge.
+			maxDecoded = 1024 * 1024
+		}
+		if _, err := DecodeBase64URLMaxDecoded(ext.LargeBlob.Data, maxDecoded); err != nil {
 			return ErrInvalidCredential
 		}
 	}
@@ -1059,7 +1072,8 @@ func ValidateFileCredential(c FileCredential) error {
 	if err := ValidateIdentifier(c.ID); err != nil {
 		return err
 	}
-	if err := ValidateBase64URL(c.IntegrityHash); err != nil {
+	// integrityHash is sha256 => 32 bytes when decoded.
+	if err := ValidateBase64URLMaxDecoded(c.IntegrityHash, 32); err != nil {
 		return ErrInvalidCredential
 	}
 	return nil

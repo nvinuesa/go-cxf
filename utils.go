@@ -13,6 +13,8 @@ var (
 	ErrInvalidIdentifierLength = errors.New("identifier exceeds 64 bytes")
 	// ErrEmptyLength indicates a non-positive length was requested.
 	ErrEmptyLength = errors.New("length must be positive")
+	// ErrExceededMaxDecodedSize indicates the decoded output would exceed a caller-provided limit.
+	ErrExceededMaxDecodedSize = errors.New("decoded data exceeds maximum allowed size")
 )
 
 // EncodeBase64URL encodes data using unpadded base64url.
@@ -25,9 +27,36 @@ func DecodeBase64URL(s string) ([]byte, error) {
 	return base64.RawURLEncoding.DecodeString(s)
 }
 
+// DecodeBase64URLMaxDecoded decodes unpadded base64url data while enforcing a maximum decoded size.
+// This mitigates memory/DoS risks when decoding untrusted inputs.
+func DecodeBase64URLMaxDecoded(s string, maxDecodedBytes int) ([]byte, error) {
+	if maxDecodedBytes < 0 {
+		return nil, ErrExceededMaxDecodedSize
+	}
+	// Fast pre-check: base64 decoded length is bounded by (len(s) * 3 / 4) rounded down.
+	// RawURLEncoding requires no padding; invalid characters will still be caught by DecodeString.
+	if decodedLen := (len(s) * 3) / 4; decodedLen > maxDecodedBytes {
+		return nil, ErrExceededMaxDecodedSize
+	}
+	b, err := DecodeBase64URL(s)
+	if err != nil {
+		return nil, err
+	}
+	if len(b) > maxDecodedBytes {
+		return nil, ErrExceededMaxDecodedSize
+	}
+	return b, nil
+}
+
 // ValidateBase64URL checks whether a string is valid unpadded base64url.
 func ValidateBase64URL(s string) error {
 	_, err := DecodeBase64URL(s)
+	return err
+}
+
+// ValidateBase64URLMaxDecoded validates unpadded base64url and enforces a maximum decoded size.
+func ValidateBase64URLMaxDecoded(s string, maxDecodedBytes int) error {
+	_, err := DecodeBase64URLMaxDecoded(s, maxDecodedBytes)
 	return err
 }
 
@@ -43,9 +72,36 @@ func DecodeBase32(s string) ([]byte, error) {
 	return enc.DecodeString(s)
 }
 
+// DecodeBase32MaxDecoded decodes unpadded Base32 while enforcing a maximum decoded size.
+// This mitigates memory/DoS risks when decoding untrusted inputs.
+func DecodeBase32MaxDecoded(s string, maxDecodedBytes int) ([]byte, error) {
+	if maxDecodedBytes < 0 {
+		return nil, ErrExceededMaxDecodedSize
+	}
+	// Fast pre-check: base32 decoded length is bounded by floor(len(s) * 5 / 8).
+	// This catches obvious oversized inputs before attempting to decode.
+	if decodedLen := (len(s) * 5) / 8; decodedLen > maxDecodedBytes {
+		return nil, ErrExceededMaxDecodedSize
+	}
+	b, err := DecodeBase32(s)
+	if err != nil {
+		return nil, err
+	}
+	if len(b) > maxDecodedBytes {
+		return nil, ErrExceededMaxDecodedSize
+	}
+	return b, nil
+}
+
 // ValidateBase32 checks whether a string is valid unpadded Base32.
 func ValidateBase32(s string) error {
 	_, err := DecodeBase32(s)
+	return err
+}
+
+// ValidateBase32MaxDecoded validates unpadded base32 and enforces a maximum decoded size.
+func ValidateBase32MaxDecoded(s string, maxDecodedBytes int) error {
+	_, err := DecodeBase32MaxDecoded(s, maxDecodedBytes)
 	return err
 }
 
