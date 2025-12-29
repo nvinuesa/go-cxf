@@ -189,11 +189,15 @@ func DecodeHeaderJSONStrict(r io.Reader, maxBytes int64) (*Header, error) {
 		return nil, fmt.Errorf("maxBytes must be positive")
 	}
 
+	// We first decode into a raw map to:
+	//  1) enforce strict JSON framing (single document)
+	//  2) enforce presence of required top-level members (spec §3.1)
+	//  3) keep unknown fields rejected (spec-strict mode)
 	dec := json.NewDecoder(io.LimitReader(r, maxBytes))
 	dec.DisallowUnknownFields()
 
-	var h Header
-	if err := dec.Decode(&h); err != nil {
+	var raw map[string]json.RawMessage
+	if err := dec.Decode(&raw); err != nil {
 		return nil, err
 	}
 
@@ -203,6 +207,25 @@ func DecodeHeaderJSONStrict(r io.Reader, maxBytes int64) (*Header, error) {
 		if err == nil {
 			return nil, fmt.Errorf("unexpected trailing data after CXF header JSON")
 		}
+		return nil, err
+	}
+
+	// Spec (§3.1): required members must be present even if empty (arrays can be empty but must exist).
+	// Enforce key presence here (not just non-zero values after unmarshalling).
+	for _, k := range []string{"version", "exporterRpId", "exporterDisplayName", "timestamp", "accounts"} {
+		if _, ok := raw[k]; !ok {
+			return nil, fmt.Errorf("missing required header member %q", k)
+		}
+	}
+
+	// Now unmarshal with the same strictness into the typed struct.
+	typedBytes, err := json.Marshal(raw)
+	if err != nil {
+		return nil, fmt.Errorf("failed to re-marshal header: %w", err)
+	}
+
+	var h Header
+	if err := json.Unmarshal(typedBytes, &h); err != nil {
 		return nil, err
 	}
 

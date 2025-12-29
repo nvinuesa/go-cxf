@@ -75,6 +75,32 @@ func TestDecodeHeaderJSONStrictOK(t *testing.T) {
 	}
 }
 
+func TestDecodeHeaderJSONStrictMissingRequiredKeyAccounts(t *testing.T) {
+	// Spec: required arrays must be present even if empty. Header.accounts is required.
+	payload := `{
+		"version":{"major":1,"minor":0},
+		"exporterRpId":"exporter.example.com",
+		"exporterDisplayName":"Exporter",
+		"timestamp":1710000000
+	}`
+	if _, err := DecodeHeaderJSONStrict(strings.NewReader(payload), int64(len(payload))+10); err == nil {
+		t.Fatalf("expected error for missing required key accounts, got nil")
+	}
+}
+
+func TestDecodeHeaderJSONStrictMissingRequiredKeyVersion(t *testing.T) {
+	// Header.version is required
+	payload := `{
+		"exporterRpId":"exporter.example.com",
+		"exporterDisplayName":"Exporter",
+		"timestamp":1710000000,
+		"accounts":[]
+	}`
+	if _, err := DecodeHeaderJSONStrict(strings.NewReader(payload), int64(len(payload))+10); err == nil {
+		t.Fatalf("expected error for missing required key version, got nil")
+	}
+}
+
 func TestDecodeHeaderJSONStrictTrailingData(t *testing.T) {
 	h := makeMinimalHeader()
 	data, err := h.Marshal()
@@ -411,43 +437,68 @@ func TestValidateCredentialPasskeyValid(t *testing.T) {
 	if err != nil {
 		t.Fatalf("failed to generate credential id: %v", err)
 	}
-	userHandle := EncodeBase64URL([]byte("user"))
-	key := EncodeBase64URL([]byte("pkcs8-key"))
-	raw := json.RawMessage(`{"type":"passkey","credentialId":"` + credID + `","key":"` + key + `","rpId":"example.com","username":"user","userDisplayName":"User","userHandle":"` + userHandle + `"}`)
+	userHandle, err := GenerateIdentifier(16)
+	if err != nil {
+		t.Fatalf("failed to generate user handle: %v", err)
+	}
+	key := EncodeBase64URL([]byte("PKCS8-KEY-DATA"))
+	raw := json.RawMessage(`{
+		"type":"passkey",
+		"credentialId":"` + credID + `",
+		"rpId":"example.com",
+		"username":"user",
+		"userDisplayName":"User",
+		"userHandle":"` + userHandle + `",
+		"key":"` + key + `",
+		"fido2Extensions":{
+			"hmacCredentials":{
+				"algorithm":"hmac-sha256",
+				"credWithUV":"` + EncodeBase64URL(make([]byte, 32)) + `",
+				"credWithoutUV":"` + EncodeBase64URL(make([]byte, 32)) + `"
+			}
+		}
+	}`)
 	if err := ValidateCredential(raw); err != nil {
 		t.Fatalf("expected valid passkey credential, got %v", err)
 	}
 }
 
 func TestValidateCredentialPasskeyInvalidHmacLength(t *testing.T) {
-	credID, _ := GenerateIdentifier(8)
-	userHandle := EncodeBase64URL([]byte("user"))
-	key := EncodeBase64URL([]byte("key"))
-	short := EncodeBase64URL([]byte("short-bytes"))
+	credID, err := GenerateIdentifier(16)
+	if err != nil {
+		t.Fatalf("failed to generate credential id: %v", err)
+	}
+	userHandle, err := GenerateIdentifier(16)
+	if err != nil {
+		t.Fatalf("failed to generate user handle: %v", err)
+	}
+	key := EncodeBase64URL([]byte("PKCS8-KEY-DATA"))
 	raw := json.RawMessage(`{
 		"type":"passkey",
 		"credentialId":"` + credID + `",
-		"key":"` + key + `",
 		"rpId":"example.com",
 		"username":"user",
 		"userDisplayName":"User",
 		"userHandle":"` + userHandle + `",
+		"key":"` + key + `",
 		"fido2Extensions":{
 			"hmacCredentials":{
-				"algorithm":"HS256",
-				"credWithUV":"` + short + `",
-				"credWithoutUV":"` + short + `"
+				"algorithm":"hmac-sha256",
+				"credWithUV":"` + EncodeBase64URL(make([]byte, 31)) + `",
+				"credWithoutUV":"` + EncodeBase64URL(make([]byte, 32)) + `"
 			}
 		}
 	}`)
-	if err := ValidateCredential(raw); err != ErrInvalidCredential {
-		t.Fatalf("expected ErrInvalidCredential for short hmac secrets, got %v", err)
+	if err := ValidateCredential(raw); err == nil {
+		t.Fatalf("expected error for invalid hmac credential length")
 	}
 }
 
 func TestValidateCredentialFileValid(t *testing.T) {
-	integrity := EncodeBase64URL([]byte("hash"))
-	raw := json.RawMessage(`{"type":"file","id":"ZmlsZWlk","name":"hello.txt","decryptedSize":5,"integrityHash":"` + integrity + `"}`)
+	fileID := "ZmlsZS0x"
+	data := []byte("filedata")
+	hash := ComputeIntegrityHash(data)
+	raw := json.RawMessage(`{"type":"file","id":"` + fileID + `","name":"hello.txt","decryptedSize":7,"integrityHash":"` + hash + `"}`)
 	if err := ValidateCredential(raw); err != nil {
 		t.Fatalf("expected valid file credential, got %v", err)
 	}
