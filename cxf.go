@@ -1328,10 +1328,107 @@ func ValidateCredentials(creds []json.RawMessage) error {
 	return nil
 }
 
-// Extension is a generic extension payload.
+// Extension is an extension payload.
+//
+// For safer decoding (and to support typed extensions), keep `Data` as raw JSON.
+// Callers/validators can selectively decode known extensions.
 type Extension struct {
-	Name string                 `json:"name"`
-	Data map[string]interface{} `json:"data,omitempty"`
+	Name string          `json:"name"`
+	Data json.RawMessage `json:"data,omitempty"`
+}
+
+// SharedExtension is the CXF typed `shared` extension payload.
+//
+// NOTE: This models the current CXF review-draft intent: it is intentionally strict about shape,
+// but tolerant/forward-compatible about unknown enum values by surfacing ErrIgnored where appropriate.
+type SharedExtension struct {
+	Accessors []SharingAccessor `json:"accessors"`
+}
+
+// SharingAccessor identifies an entity that may access a shared item/collection.
+type SharingAccessor struct {
+	Type        SharingAccessorType         `json:"type"`
+	ExternalID  string                      `json:"externalId,omitempty"`
+	Permissions []SharingAccessorPermission `json:"permissions"`
+}
+
+// SharingAccessorType is an enum for accessor types.
+type SharingAccessorType string
+
+// SharingAccessorPermission is an enum for permissions.
+type SharingAccessorPermission string
+
+const (
+	SharingAccessorTypeUser  SharingAccessorType = "user"
+	SharingAccessorTypeGroup SharingAccessorType = "group"
+
+	SharingAccessorPermissionRead  SharingAccessorPermission = "read"
+	SharingAccessorPermissionWrite SharingAccessorPermission = "write"
+)
+
+// DecodeSharedExtension attempts to decode a `shared` extension payload from an Extension.
+// It returns ErrIgnored if the extension is not `shared` or if it contains unknown enum values
+// that should be ignored per CXF forward-compat rules.
+func DecodeSharedExtension(ext Extension) (*SharedExtension, error) {
+	if ext.Name != "shared" {
+		return nil, ErrIgnored
+	}
+	// If `data` is missing/null treat as invalid format for a known extension.
+	if len(ext.Data) == 0 || string(ext.Data) == "null" {
+		return nil, ErrInvalidFormat
+	}
+	var s SharedExtension
+	if err := json.Unmarshal(ext.Data, &s); err != nil {
+		return nil, ErrInvalidFormat
+	}
+	if err := ValidateSharedExtension(s); err != nil {
+		return nil, err
+	}
+	return &s, nil
+}
+
+// ValidateSharedExtension validates the typed `shared` extension payload.
+func ValidateSharedExtension(s SharedExtension) error {
+	// In CXF, required arrays must be present (even if empty). Here we only validate typed payload.
+	// If `accessors` is omitted it will decode as nil; treat that as missing required member.
+	if s.Accessors == nil {
+		return ErrMissingFields
+	}
+	for _, a := range s.Accessors {
+		if err := ValidateSharingAccessor(a); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func ValidateSharingAccessor(a SharingAccessor) error {
+	if a.Type == "" {
+		return ErrMissingFields
+	}
+	switch a.Type {
+	case SharingAccessorTypeUser, SharingAccessorTypeGroup:
+		// ok
+	default:
+		// Unknown enum value => ignore per CXF forward-compat rules.
+		return ErrIgnored
+	}
+
+	// permissions is required and must be present (even if empty).
+	if a.Permissions == nil {
+		return ErrMissingFields
+	}
+	for _, p := range a.Permissions {
+		switch p {
+		case SharingAccessorPermissionRead, SharingAccessorPermissionWrite:
+			// ok
+		default:
+			// Unknown enum value => ignore per CXF forward-compat rules.
+			return ErrIgnored
+		}
+	}
+
+	return nil
 }
 
 // NewHeader constructs a Header with the default version.
