@@ -1,11 +1,11 @@
-.PHONY: all build test test-verbose test-coverage lint fmt vet clean help
+.PHONY: all build test test-verbose test-coverage lint fmt clean help
 
 # Go parameters
 GOCMD=go
 GOBUILD=$(GOCMD) build
 GOTEST=$(GOCMD) test
 GOFMT=gofmt
-GOVET=$(GOCMD) vet
+GOLINT=golangci-lint
 GOMOD=$(GOCMD) mod
 GOCLEAN=$(GOCMD) clean
 
@@ -14,7 +14,7 @@ BINARY_NAME=go-cxf
 COVERAGE_FILE=coverage.out
 
 # Default target
-all: fmt vet test
+all: fmt lint test
 
 ## build: Build the library (compile check)
 build:
@@ -42,12 +42,9 @@ test-coverage-html: test-coverage
 	$(GOCMD) tool cover -html=$(COVERAGE_FILE) -o coverage.html
 	@echo "Coverage report generated: coverage.html"
 
-## lint: Run go vet (basic linting)
-lint: vet
-
-## vet: Run go vet
-vet:
-	$(GOVET) ./...
+## lint: Run golangci-lint
+lint:
+	$(GOLINT) run ./...
 
 ## fmt: Format code
 fmt:
@@ -79,8 +76,8 @@ clean:
 	$(GOCLEAN)
 	rm -f $(COVERAGE_FILE) coverage.html
 
-## ci: Run all CI checks (format, vet, test)
-ci: fmt-check vet test-short
+## ci: Run all CI checks (format, lint, test)
+ci: fmt-check lint test-short
 
 ## help: Show this help
 help:
