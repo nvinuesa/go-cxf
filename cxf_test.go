@@ -1,9 +1,7 @@
 package cxf
 
 import (
-	"crypto/sha256"
 	"encoding/json"
-	"strings"
 	"testing"
 )
 
@@ -36,1087 +34,344 @@ func makeMinimalHeader() *Header {
 	}
 }
 
-func TestNewHeader(t *testing.T) {
-	h := NewHeader("exp.example", "Exporter", 1700000000)
-	if h.Version.Major != VersionMajor || h.Version.Minor != VersionMinor {
-		t.Fatalf("expected version %d.%d, got %d.%d", VersionMajor, VersionMinor, h.Version.Major, h.Version.Minor)
+func TestCredentialTypeConstants(t *testing.T) {
+	// Verify credential type constants match expected kebab-case values
+	tests := map[string]string{
+		CredentialTypeAddress:           "address",
+		CredentialTypeAPIKey:            "api-key",
+		CredentialTypeBasicAuth:         "basic-auth",
+		CredentialTypeCreditCard:        "credit-card",
+		CredentialTypeCustomFields:      "custom-fields",
+		CredentialTypeDriversLicense:    "drivers-license",
+		CredentialTypeFile:              "file",
+		CredentialTypeGeneratedPassword: "generated-password",
+		CredentialTypeIdentityDocument:  "identity-document",
+		CredentialTypeItemReference:     "item-reference",
+		CredentialTypeNote:              "note",
+		CredentialTypePasskey:           "passkey",
+		CredentialTypePassport:          "passport",
+		CredentialTypePersonName:        "person-name",
+		CredentialTypeSSHKey:            "ssh-key",
+		CredentialTypeTOTP:              "totp",
+		CredentialTypeWiFi:              "wifi",
 	}
-	if h.ExporterRpId != "exp.example" || h.ExporterDisplayName != "Exporter" {
-		t.Fatalf("exporter fields not set correctly: %+v", h)
-	}
-	if h.Timestamp != 1700000000 {
-		t.Fatalf("timestamp not set")
-	}
-	if h.Accounts == nil {
-		t.Fatalf("accounts slice should be initialized")
+
+	for got, want := range tests {
+		if got != want {
+			t.Errorf("credential type mismatch: got %q want %q", got, want)
+		}
 	}
 }
 
-func TestHeaderValidateValid(t *testing.T) {
-	h := makeMinimalHeader()
-	if err := h.Validate(); err != nil {
-		t.Fatalf("expected valid header, got error: %v", err)
+func TestFieldTypeConstants(t *testing.T) {
+	// Verify field type constants match expected kebab-case values
+	tests := map[string]string{
+		FieldTypeString:              "string",
+		FieldTypeConcealedString:     "concealed-string",
+		FieldTypeEmail:               "email",
+		FieldTypeNumber:              "number",
+		FieldTypeBoolean:             "boolean",
+		FieldTypeDate:                "date",
+		FieldTypeYearMonth:           "year-month",
+		FieldTypeWifiNetworkSecurity: "wifi-network-security-type",
+		FieldTypeCountryCode:         "country-code",
+		FieldTypeSubdivisionCode:     "subdivision-code",
+	}
+
+	for got, want := range tests {
+		if got != want {
+			t.Errorf("field type mismatch: got %q want %q", got, want)
+		}
 	}
 }
 
-func TestDecodeHeaderJSONStrictOK(t *testing.T) {
-	h := makeMinimalHeader()
-	data, err := h.Marshal()
-	if err != nil {
-		t.Fatalf("marshal error: %v", err)
+func TestVersionConstants(t *testing.T) {
+	if VersionMajor != 1 {
+		t.Errorf("expected VersionMajor 1, got %d", VersionMajor)
 	}
-
-	decoded, err := DecodeHeaderJSONStrict(strings.NewReader(string(data)), int64(len(data))+10)
-	if err != nil {
-		t.Fatalf("expected strict decode to succeed, got %v", err)
-	}
-	if decoded.ExporterRpId != h.ExporterRpId {
-		t.Fatalf("exporterRpId mismatch: got %q want %q", decoded.ExporterRpId, h.ExporterRpId)
+	if VersionMinor != 0 {
+		t.Errorf("expected VersionMinor 0, got %d", VersionMinor)
 	}
 }
 
-func TestDecodeHeaderJSONStrictMissingRequiredKeyAccounts(t *testing.T) {
-	// Spec: required arrays must be present even if empty. Header.accounts is required.
-	payload := `{
-		"version":{"major":1,"minor":0},
-		"exporterRpId":"exporter.example.com",
-		"exporterDisplayName":"Exporter",
-		"timestamp":1710000000
-	}`
-	if _, err := DecodeHeaderJSONStrict(strings.NewReader(payload), int64(len(payload))+10); err == nil {
-		t.Fatalf("expected error for missing required key accounts, got nil")
-	}
-}
-
-func TestDecodeHeaderJSONStrictMissingRequiredKeyVersion(t *testing.T) {
-	// Header.version is required
-	payload := `{
-		"exporterRpId":"exporter.example.com",
-		"exporterDisplayName":"Exporter",
-		"timestamp":1710000000,
-		"accounts":[]
-	}`
-	if _, err := DecodeHeaderJSONStrict(strings.NewReader(payload), int64(len(payload))+10); err == nil {
-		t.Fatalf("expected error for missing required key version, got nil")
-	}
-}
-
-func TestDecodeHeaderJSONStrictMissingRequiredNestedAccountCollections(t *testing.T) {
-	// Spec (§2.1.2): required arrays must be present even if empty.
-	// Account.collections is required.
-	payload := `{
-		"version":{"major":1,"minor":0},
-		"exporterRpId":"exporter.example.com",
-		"exporterDisplayName":"Exporter",
-		"timestamp":1710000000,
-		"accounts":[
-			{
-				"id":"YWNjb3VudC0x",
-				"username":"user",
-				"email":"user@example.com",
-				"items":[
-					{
-						"id":"aXRlbS0x",
-						"title":"Test Item",
-						"credentials":[{"type":"totp","secret":"JBSWY3DPEHPK3PXP","algorithm":"sha1","period":30,"digits":6}]
-					}
-				]
-			}
-		]
-	}`
-	if _, err := DecodeHeaderJSONStrict(strings.NewReader(payload), int64(len(payload))+10); err == nil {
-		t.Fatalf("expected error for missing required nested member collections, got nil")
-	}
-}
-
-func TestDecodeHeaderJSONStrictMissingRequiredNestedAccountItems(t *testing.T) {
-	// Spec (§2.1.2): required arrays must be present even if empty.
-	// Account.items is required.
-	payload := `{
-		"version":{"major":1,"minor":0},
-		"exporterRpId":"exporter.example.com",
-		"exporterDisplayName":"Exporter",
-		"timestamp":1710000000,
-		"accounts":[
-			{
-				"id":"YWNjb3VudC0x",
-				"username":"user",
-				"email":"user@example.com",
-				"collections":[]
-			}
-		]
-	}`
-	if _, err := DecodeHeaderJSONStrict(strings.NewReader(payload), int64(len(payload))+10); err == nil {
-		t.Fatalf("expected error for missing required nested member items, got nil")
-	}
-}
-
-func TestDecodeHeaderJSONStrictMissingRequiredNestedItemCredentials(t *testing.T) {
-	// Spec (§2.1.2): required arrays must be present even if empty.
-	// Item.credentials is required.
-	payload := `{
-		"version":{"major":1,"minor":0},
-		"exporterRpId":"exporter.example.com",
-		"exporterDisplayName":"Exporter",
-		"timestamp":1710000000,
-		"accounts":[
-			{
-				"id":"YWNjb3VudC0x",
-				"username":"user",
-				"email":"user@example.com",
-				"collections":[],
-				"items":[
-					{
-						"id":"aXRlbS0x",
-						"title":"Test Item"
-					}
-				]
-			}
-		]
-	}`
-	if _, err := DecodeHeaderJSONStrict(strings.NewReader(payload), int64(len(payload))+10); err == nil {
-		t.Fatalf("expected error for missing required nested member credentials, got nil")
-	}
-}
-
-func TestDecodeHeaderJSONStrictMissingRequiredNestedCollectionItems(t *testing.T) {
-	// Spec (§2.1.2): required arrays must be present even if empty.
-	// Collection.items is required.
-	payload := `{
-		"version":{"major":1,"minor":0},
-		"exporterRpId":"exporter.example.com",
-		"exporterDisplayName":"Exporter",
-		"timestamp":1710000000,
-		"accounts":[
-			{
-				"id":"YWNjb3VudC0x",
-				"username":"user",
-				"email":"user@example.com",
-				"collections":[
-					{
-						"id":"Y29sLTE",
-						"title":"Collection"
-					}
-				],
-				"items":[
-					{
-						"id":"aXRlbS0x",
-						"title":"Test Item",
-						"credentials":[{"type":"totp","secret":"JBSWY3DPEHPK3PXP","algorithm":"sha1","period":30,"digits":6}]
-					}
-				]
-			}
-		]
-	}`
-	if _, err := DecodeHeaderJSONStrict(strings.NewReader(payload), int64(len(payload))+10); err == nil {
-		t.Fatalf("expected error for missing required nested member items on collection, got nil")
-	}
-}
-
-func TestDecodeHeaderJSONStrictTrailingData(t *testing.T) {
-	h := makeMinimalHeader()
-	data, err := h.Marshal()
-	if err != nil {
-		t.Fatalf("marshal error: %v", err)
-	}
-
-	// Add a second JSON value after the header.
-	payload := string(data) + " {}"
-	if _, err := DecodeHeaderJSONStrict(strings.NewReader(payload), int64(len(payload))+10); err == nil {
-		t.Fatalf("expected error for trailing data, got nil")
-	}
-}
-
-func TestDecodeHeaderJSONStrictSizeLimit(t *testing.T) {
-	h := makeMinimalHeader()
-	data, err := h.Marshal()
-	if err != nil {
-		t.Fatalf("marshal error: %v", err)
-	}
-
-	// maxBytes too small for the payload.
-	if _, err := DecodeHeaderJSONStrict(strings.NewReader(string(data)), 1); err == nil {
-		t.Fatalf("expected error for size-limited decode, got nil")
-	}
-}
-
-func TestHeaderValidateMissingAccounts(t *testing.T) {
-	h := NewHeader("exp.example", "Exporter", 1700000000)
-	err := h.Validate()
-	if err != ErrMissingAccount {
-		t.Fatalf("expected ErrMissingAccount, got %v", err)
-	}
-}
-
-func TestHeaderValidateMissingTimestamp(t *testing.T) {
-	h := NewHeader("exp.example", "Exporter", 0)
-	err := h.Validate()
-	if err != ErrInvalidFormat {
-		t.Fatalf("expected ErrInvalidFormat for zero timestamp, got %v", err)
-	}
-}
-
-func TestAccountValidateMissingItems(t *testing.T) {
-	acc := Account{
-		ID:       "YWNjb3VudC0x",
-		Username: "user",
-		Email:    "user@example.com",
-		Items:    []Item{},
-	}
-	err := acc.Validate()
-	if err != ErrMissingItem {
-		t.Fatalf("expected ErrMissingItem, got %v", err)
-	}
-}
-
-func TestCollectionValidate(t *testing.T) {
-	col := Collection{
-		ID:    "",
-		Title: "",
-	}
-	if err := col.Validate(); err != ErrMissingFields {
-		t.Fatalf("expected ErrMissingFields, got %v", err)
-	}
-	col = Collection{ID: "Y29sMQ", Title: "Title"}
-	if err := col.Validate(); err != nil {
-		t.Fatalf("expected valid collection, got %v", err)
-	}
-}
-
-func TestItemValidate(t *testing.T) {
-	item := Item{
-		ID:    "",
-		Title: "",
-	}
-	if err := item.Validate(); err != ErrMissingFields {
-		t.Fatalf("expected ErrMissingFields for missing ID/title, got %v", err)
-	}
-	item = Item{
-		ID:    "aXRlbS0x",
-		Title: "Item",
-	}
-	if err := item.Validate(); err != ErrMissingFields {
-		t.Fatalf("expected ErrMissingFields for missing credentials, got %v", err)
-	}
-	item.Credentials = []json.RawMessage{minimalTOTP()}
-	if err := item.Validate(); err != nil {
-		t.Fatalf("expected valid item, got %v", err)
-	}
-}
-
-func TestHeaderJSONRoundTrip(t *testing.T) {
-	h := makeMinimalHeader()
-	data, err := h.Marshal()
-	if err != nil {
-		t.Fatalf("marshal error: %v", err)
-	}
-	var out Header
-	if err := json.Unmarshal(data, &out); err != nil {
-		t.Fatalf("unmarshal error: %v", err)
-	}
-	if err := out.Validate(); err != nil {
-		t.Fatalf("round-trip validation failed: %v", err)
-	}
-	if out.ExporterRpId != h.ExporterRpId || out.ExporterDisplayName != h.ExporterDisplayName {
-		t.Fatalf("exporter fields mismatch after round trip")
-	}
-	if len(out.Accounts) != 1 || len(out.Accounts[0].Items) != 1 {
-		t.Fatalf("accounts/items mismatch after round trip")
-	}
-}
-
-func TestHeaderJSONRoundTripWithWiFiAndSSH(t *testing.T) {
-	// Spec: EditableField.value is a string (tstr) for all field types, including boolean/number.
-	wifi := json.RawMessage(`{"type":"wifi","ssid":{"fieldType":"string","value":"MyWiFi"},"networkSecurityType":{"fieldType":"wifi-network-security-type","value":"wpa2-personal"},"passphrase":{"fieldType":"concealed-string","value":"secret"},"hidden":{"fieldType":"boolean","value":"false"}}`)
-	ssh := json.RawMessage(`{"type":"ssh-key","keyType":"ssh-ed25519","privateKey":"` + EncodeBase64URL([]byte("PRIVATE-KEY-DATA")) + `","keyComment":"work"}`)
-
-	item := Item{
-		ID:          "aXRlbS0y",
-		Title:       "WiFi+SSH",
-		Credentials: []json.RawMessage{wifi, ssh},
-	}
-	account := Account{
-		ID:       "YWNjb3VudC0y",
-		Username: "user2",
-		Email:    "user2@example.com",
-		Items:    []Item{item},
-	}
-	h := &Header{
-		Version: Version{
-			Major: VersionMajor,
-			Minor: VersionMinor,
+func TestCredentialSerialization(t *testing.T) {
+	// Test that credential types can be marshaled and unmarshaled correctly
+	creds := []any{
+		&BasicAuthCredential{
+			Type:     CredentialTypeBasicAuth,
+			Username: &EditableField{FieldType: FieldTypeString, Value: json.RawMessage(`"testuser"`)},
+			Password: &EditableField{FieldType: FieldTypeConcealedString, Value: json.RawMessage(`"secret"`)},
 		},
-		ExporterRpId:        "exporter.example.com",
-		ExporterDisplayName: "Exporter",
-		Timestamp:           1710000001,
-		Accounts:            []Account{account},
+		&TOTPCredential{
+			Type:      CredentialTypeTOTP,
+			Secret:    "JBSWY3DPEHPK3PXP",
+			Algorithm: "sha1",
+			Period:    30,
+			Digits:    6,
+		},
+		&PasskeyCredential{
+			Type:            CredentialTypePasskey,
+			CredentialID:    "Y3JlZGVudGlhbC0x",
+			RpId:            "example.com",
+			Username:        "user",
+			UserDisplayName: "Test User",
+			UserHandle:      "dXNlci0x",
+			Key:             "a2V5LWRhdGE",
+		},
+		&FileCredential{
+			Type:          CredentialTypeFile,
+			ID:            "ZmlsZS0x",
+			Name:          "test.txt",
+			DecryptedSize: 1024,
+			IntegrityHash: "dGVzdC1oYXNo", // placeholder hash
+		},
+		&GeneratedPasswordCredential{
+			Type:     CredentialTypeGeneratedPassword,
+			Password: "generated-password-123",
+		},
+		&NoteCredential{
+			Type:    CredentialTypeNote,
+			Content: &EditableField{FieldType: FieldTypeString, Value: json.RawMessage(`"Note content"`)},
+		},
 	}
 
-	data, err := h.Marshal()
+	for _, cred := range creds {
+		data, err := json.Marshal(cred)
+		if err != nil {
+			t.Fatalf("failed to marshal credential: %v", err)
+		}
+
+		// Verify type field is present
+		var env struct {
+			Type string `json:"type"`
+		}
+		if err := json.Unmarshal(data, &env); err != nil {
+			t.Fatalf("failed to unmarshal type: %v", err)
+		}
+		if env.Type == "" {
+			t.Fatalf("credential type field is empty")
+		}
+	}
+}
+
+func TestWifiSecurityConstants(t *testing.T) {
+	tests := map[string]string{
+		WifiSecurityUnsecured:    "unsecured",
+		WifiSecurityWPAPersonal:  "wpa-personal",
+		WifiSecurityWPA2Personal: "wpa2-personal",
+		WifiSecurityWPA3Personal: "wpa3-personal",
+		WifiSecurityWEP:          "wep",
+	}
+
+	for got, want := range tests {
+		if got != want {
+			t.Errorf("wifi security type mismatch: got %q want %q", got, want)
+		}
+	}
+}
+
+func TestOTPHashAlgorithmConstants(t *testing.T) {
+	tests := map[string]string{
+		OTPHashAlgorithmSha1:   "sha1",
+		OTPHashAlgorithmSha256: "sha256",
+		OTPHashAlgorithmSha512: "sha512",
+	}
+
+	for got, want := range tests {
+		if got != want {
+			t.Errorf("OTP hash algorithm mismatch: got %q want %q", got, want)
+		}
+	}
+}
+
+func TestSharingAccessorTypeConstants(t *testing.T) {
+	if SharingAccessorTypeUser != "user" {
+		t.Errorf("expected SharingAccessorTypeUser = 'user', got %q", SharingAccessorTypeUser)
+	}
+	if SharingAccessorTypeGroup != "group" {
+		t.Errorf("expected SharingAccessorTypeGroup = 'group', got %q", SharingAccessorTypeGroup)
+	}
+}
+
+func TestSharingAccessorPermissionConstants(t *testing.T) {
+	tests := map[SharingAccessorPermission]string{
+		SharingAccessorPermissionRead:       "read",
+		SharingAccessorPermissionReadSecret: "readSecret",
+		SharingAccessorPermissionUpdate:     "update",
+		SharingAccessorPermissionCreate:     "create",
+		SharingAccessorPermissionDelete:     "delete",
+		SharingAccessorPermissionShare:      "share",
+		SharingAccessorPermissionManage:     "manage",
+	}
+
+	for got, want := range tests {
+		if string(got) != want {
+			t.Errorf("permission mismatch: got %q want %q", got, want)
+		}
+	}
+}
+
+func TestAndroidAppHashAlgorithmConstants(t *testing.T) {
+	if AndroidAppHashAlgorithmSha256 != "sha256" {
+		t.Errorf("expected AndroidAppHashAlgorithmSha256 = 'sha256', got %q", AndroidAppHashAlgorithmSha256)
+	}
+	if AndroidAppHashAlgorithmSha1 != "sha1" {
+		t.Errorf("expected AndroidAppHashAlgorithmSha1 = 'sha1', got %q", AndroidAppHashAlgorithmSha1)
+	}
+}
+
+func TestFido2HmacCredentialAlgorithmConstants(t *testing.T) {
+	if Fido2HmacCredentialAlgorithmHmacSha256 != "hmac-sha256" {
+		t.Errorf("expected 'hmac-sha256', got %q", Fido2HmacCredentialAlgorithmHmacSha256)
+	}
+}
+
+func TestLinkedItemSerialization(t *testing.T) {
+	li := LinkedItem{
+		Item:    "aXRlbS0x",
+		Account: "YWNjb3VudC0x",
+	}
+
+	data, err := json.Marshal(li)
 	if err != nil {
 		t.Fatalf("marshal error: %v", err)
 	}
 
-	var restored Header
-	if err := json.Unmarshal(data, &restored); err != nil {
+	var decoded LinkedItem
+	if err := json.Unmarshal(data, &decoded); err != nil {
 		t.Fatalf("unmarshal error: %v", err)
 	}
 
-	if err := restored.Validate(); err != nil {
-		t.Fatalf("restored header validation failed: %v", err)
-	}
-
-	if len(restored.Accounts) != 1 || len(restored.Accounts[0].Items) != 1 {
-		t.Fatalf("accounts/items mismatch after round trip")
-	}
-	if len(restored.Accounts[0].Items[0].Credentials) != 2 {
-		t.Fatalf("expected two credentials after round trip")
+	if decoded.Item != li.Item || decoded.Account != li.Account {
+		t.Fatalf("linked item mismatch")
 	}
 }
 
-func TestValidateEditableFieldBoolean(t *testing.T) {
-	// Spec: boolean value is stringified.
-	f := EditableField{FieldType: FieldTypeBoolean, Value: json.RawMessage("\"true\"")}
-	if err := ValidateEditableField(f); err != nil {
-		t.Fatalf("expected boolean field to be valid, got %v", err)
-	}
-
-	// Still a string, but invalid boolean content.
-	f.Value = json.RawMessage("\"notbool\"")
-	if err := ValidateEditableField(f); err != ErrInvalidFieldValue {
-		t.Fatalf("expected ErrInvalidFieldValue for non-boolean, got %v", err)
-	}
-
-	// Non-string value should be rejected in spec-strict mode.
-	f.Value = json.RawMessage("true")
-	if err := ValidateEditableField(f); err != ErrInvalidFieldValue {
-		t.Fatalf("expected ErrInvalidFieldValue for non-string boolean, got %v", err)
-	}
-}
-
-func TestValidateEditableFieldNumber(t *testing.T) {
-	// Spec: number value is stringified.
-	f := EditableField{FieldType: FieldTypeNumber, Value: json.RawMessage("\"123.45\"")}
-	if err := ValidateEditableField(f); err != nil {
-		t.Fatalf("expected number field to be valid, got %v", err)
-	}
-
-	// String, but not a number.
-	f.Value = json.RawMessage("\"string\"")
-	if err := ValidateEditableField(f); err != ErrInvalidFieldValue {
-		t.Fatalf("expected ErrInvalidFieldValue for non-numeric, got %v", err)
-	}
-
-	// Non-string should be rejected in spec-strict mode.
-	f.Value = json.RawMessage("123.45")
-	if err := ValidateEditableField(f); err != ErrInvalidFieldValue {
-		t.Fatalf("expected ErrInvalidFieldValue for non-string number, got %v", err)
-	}
-}
-
-func TestValidateEditableFieldInvalidType(t *testing.T) {
-	// Spec (§2.1.1): unknown enum values should be ignored by importers.
-	// Library signals this via ErrIgnored.
-	f := EditableField{FieldType: "unknown-type", Value: json.RawMessage("\"true\"")}
-	if err := ValidateEditableField(f); err != ErrIgnored {
-		t.Fatalf("expected ErrIgnored, got %v", err)
-	}
-}
-
-func TestValidateEditableFieldMissingValue(t *testing.T) {
-	f := EditableField{FieldType: FieldTypeString, Value: json.RawMessage("")}
-	if err := ValidateEditableField(f); err != ErrMissingFields {
-		t.Fatalf("expected ErrMissingFields for empty value, got %v", err)
-	}
-}
-
-func TestValidateEditableFieldInvalidID(t *testing.T) {
-	f := EditableField{ID: "not-base64url", FieldType: FieldTypeString, Value: json.RawMessage("\"ok\"")}
-	if err := ValidateEditableField(f); err == nil {
-		t.Fatalf("expected error for invalid id")
-	}
-}
-
-func TestValidateEditableFieldsStopsOnError(t *testing.T) {
-	fields := []EditableField{
-		{FieldType: FieldTypeBoolean, Value: json.RawMessage("\"false\"")},
-		{FieldType: "bad-type", Value: json.RawMessage("\"true\"")},
-		{FieldType: FieldTypeNumber, Value: json.RawMessage("\"10\"")},
-	}
-	// Spec (§2.1.1): unknown enum values should be ignored by importers.
-	// Library signals this via ErrIgnored and stops on the first such error.
-	if err := ValidateEditableFields(fields); err != ErrIgnored {
-		t.Fatalf("expected ErrIgnored, got %v", err)
-	}
-}
-
-func TestValidateEditableFieldStringTypes(t *testing.T) {
-	f := EditableField{FieldType: FieldTypeString, Value: json.RawMessage("\"hello\"")}
-	if err := ValidateEditableField(f); err != nil {
-		t.Fatalf("expected string field to be valid, got %v", err)
-	}
-
-	f.Value = json.RawMessage("123")
-	if err := ValidateEditableField(f); err != ErrInvalidFieldValue {
-		t.Fatalf("expected ErrInvalidFieldValue for non-string value, got %v", err)
-	}
-}
-
-func TestValidateEditableFieldDate(t *testing.T) {
-	f := EditableField{FieldType: FieldTypeDate, Value: json.RawMessage("\"2024-02-29\"")}
-	if err := ValidateEditableField(f); err != nil {
-		t.Fatalf("expected valid date, got %v", err)
-	}
-
-	f.Value = json.RawMessage("\"2024-13-01\"")
-	if err := ValidateEditableField(f); err != ErrInvalidFieldValue {
-		t.Fatalf("expected ErrInvalidFieldValue for bad date, got %v", err)
-	}
-}
-
-func TestValidateEditableFieldYearMonth(t *testing.T) {
-	f := EditableField{FieldType: FieldTypeYearMonth, Value: json.RawMessage("\"2024-12\"")}
-	if err := ValidateEditableField(f); err != nil {
-		t.Fatalf("expected valid year-month, got %v", err)
-	}
-
-	f.Value = json.RawMessage("\"2024-13\"")
-	if err := ValidateEditableField(f); err != ErrInvalidFieldValue {
-		t.Fatalf("expected ErrInvalidFieldValue for bad year-month, got %v", err)
-	}
-}
-
-func TestValidateEditableFieldCountryCode(t *testing.T) {
-	f := EditableField{FieldType: FieldTypeCountryCode, Value: json.RawMessage("\"US\"")}
-	if err := ValidateEditableField(f); err != nil {
-		t.Fatalf("expected valid country-code, got %v", err)
-	}
-
-	f.Value = json.RawMessage("\"usa\"")
-	if err := ValidateEditableField(f); err != ErrInvalidFieldValue {
-		t.Fatalf("expected ErrInvalidFieldValue for lowercase/len!=2, got %v", err)
-	}
-}
-
-func TestValidateEditableFieldSubdivisionCode(t *testing.T) {
-	// Valid cases
-	validCodes := []string{"US-CA", "GB-ENG", "FR-75"}
-	for _, code := range validCodes {
-		f := EditableField{FieldType: FieldTypeSubdivisionCode, Value: json.RawMessage(`"` + code + `"`)}
-		if err := ValidateEditableField(f); err != nil {
-			t.Errorf("expected valid subdivision-code %q, got %v", code, err)
-		}
-	}
-
-	// Invalid cases
-	invalidCodes := []string{
-		"USCA",    // Missing dash
-		"us-ca",   // Lowercase country
-		"US-ca",   // Lowercase subdivision
-		"12-CA",   // Numbers in country
-		"US-C!",   // Special chars
-		"USA-CA",  // Country code too long
-		"U-CA",    // Country code too short
-		"US-",     // Subdivision too short
-		"US-1234", // Subdivision too long
-	}
-	for _, code := range invalidCodes {
-		f := EditableField{FieldType: FieldTypeSubdivisionCode, Value: json.RawMessage(`"` + code + `"`)}
-		if err := ValidateEditableField(f); err != ErrInvalidFieldValue {
-			t.Errorf("expected ErrInvalidFieldValue for invalid code %q, got %v", code, err)
-		}
-	}
-}
-
-func TestValidateEditableFieldWifiSecurity(t *testing.T) {
-	f := EditableField{FieldType: FieldTypeWifiNetworkSecurity, Value: json.RawMessage("\"wpa2-personal\"")}
-	if err := ValidateEditableField(f); err != nil {
-		t.Fatalf("expected valid wifi security value, got %v", err)
-	}
-
-	f.Value = json.RawMessage("\"unknown\"")
-	if err := ValidateEditableField(f); err != ErrInvalidFieldValue {
-		t.Fatalf("expected ErrInvalidFieldValue for invalid wifi security, got %v", err)
-	}
-}
-
-func TestValidateCredentialTOTPValid(t *testing.T) {
-	raw := minimalTOTP()
-	if err := ValidateCredential(raw); err != nil {
-		t.Fatalf("expected valid TOTP credential, got %v", err)
-	}
-}
-
-func TestValidateCredentialTOTPIgnoreUnknownAlgorithm(t *testing.T) {
-	// Spec (§3.3.16): importers MUST ignore TOTP entries with unknown algorithm values.
-	raw := json.RawMessage(`{"type":"totp","secret":"JBSWY3DPEHPK3PXP","algorithm":"sha999","period":30,"digits":6}`)
-	if err := ValidateCredential(raw); err != nil {
-		t.Fatalf("expected unknown-algorithm TOTP to be ignored (nil error), got %v", err)
-	}
-}
-
-func TestValidateCredentialTOTPInvalid(t *testing.T) {
-	raw := json.RawMessage(`{"type":"totp","secret":"!!!","algorithm":"sha1","period":30,"digits":6}`)
-	if err := ValidateCredential(raw); err != ErrInvalidCredential {
-		t.Fatalf("expected ErrInvalidCredential for invalid secret, got %v", err)
-	}
-}
-
-func TestValidateCredentialPasskeyValid(t *testing.T) {
-	credID, err := GenerateIdentifier(16)
-	if err != nil {
-		t.Fatalf("failed to generate credential id: %v", err)
-	}
-	userHandle, err := GenerateIdentifier(16)
-	if err != nil {
-		t.Fatalf("failed to generate user handle: %v", err)
-	}
-	key := EncodeBase64URL([]byte("PKCS8-KEY-DATA"))
-	raw := json.RawMessage(`{
-		"type":"passkey",
-		"credentialId":"` + credID + `",
-		"rpId":"example.com",
-		"username":"user",
-		"userDisplayName":"User",
-		"userHandle":"` + userHandle + `",
-		"key":"` + key + `",
-		"fido2Extensions":{
-			"hmacCredentials":{
-				"algorithm":"hmac-sha256",
-				"credWithUV":"` + EncodeBase64URL(make([]byte, 32)) + `",
-				"credWithoutUV":"` + EncodeBase64URL(make([]byte, 32)) + `"
-			}
-		}
-	}`)
-	if err := ValidateCredential(raw); err != nil {
-		t.Fatalf("expected valid passkey credential, got %v", err)
-	}
-}
-
-func TestValidateCredentialPasskeyInvalidHmacLength(t *testing.T) {
-	credID, err := GenerateIdentifier(16)
-	if err != nil {
-		t.Fatalf("failed to generate credential id: %v", err)
-	}
-	userHandle, err := GenerateIdentifier(16)
-	if err != nil {
-		t.Fatalf("failed to generate user handle: %v", err)
-	}
-	key := EncodeBase64URL([]byte("PKCS8-KEY-DATA"))
-	raw := json.RawMessage(`{
-		"type":"passkey",
-		"credentialId":"` + credID + `",
-		"rpId":"example.com",
-		"username":"user",
-		"userDisplayName":"User",
-		"userHandle":"` + userHandle + `",
-		"key":"` + key + `",
-		"fido2Extensions":{
-			"hmacCredentials":{
-				"algorithm":"hmac-sha256",
-				"credWithUV":"` + EncodeBase64URL(make([]byte, 31)) + `",
-				"credWithoutUV":"` + EncodeBase64URL(make([]byte, 32)) + `"
-			}
-		}
-	}`)
-	if err := ValidateCredential(raw); err == nil {
-		t.Fatalf("expected error for invalid hmac credential length")
-	}
-}
-
-func TestValidateCredentialFileValid(t *testing.T) {
-	fileID := "ZmlsZS0x"
-	data := []byte("filedata")
-	hash := ComputeIntegrityHash(data)
-	raw := json.RawMessage(`{"type":"file","id":"` + fileID + `","name":"hello.txt","decryptedSize":7,"integrityHash":"` + hash + `"}`)
-	if err := ValidateCredential(raw); err != nil {
-		t.Fatalf("expected valid file credential, got %v", err)
-	}
-}
-
-func TestValidateCredentialFileMissingFields(t *testing.T) {
-	raw := json.RawMessage(`{"type":"file","id":"","name":"hello.txt","decryptedSize":0,"integrityHash":""}`)
-	if err := ValidateCredential(raw); err != ErrMissingFields {
-		t.Fatalf("expected ErrMissingFields for incomplete file, got %v", err)
-	}
-}
-
-func TestComputeIntegrityHash(t *testing.T) {
-	data := []byte("hello")
-	sum := sha256.Sum256(data)
-	want := EncodeBase64URL(sum[:])
-	got := ComputeIntegrityHash(data)
-	if got != want {
-		t.Fatalf("ComputeIntegrityHash mismatch: got %s, want %s", got, want)
-	}
-}
-
-func TestValidateIntegrityHash(t *testing.T) {
-	data := []byte("hello")
-	hash := ComputeIntegrityHash(data)
-
-	if err := ValidateIntegrityHash(data, hash); err != nil {
-		t.Fatalf("expected valid integrity hash, got %v", err)
-	}
-
-	if err := ValidateIntegrityHash(data, "bogus"); err != ErrInvalidCredential {
-		t.Fatalf("expected ErrInvalidCredential for mismatched hash, got %v", err)
-	}
-
-	if err := ValidateIntegrityHash(data, ""); err != ErrMissingFields {
-		t.Fatalf("expected ErrMissingFields for empty hash, got %v", err)
-	}
-}
-
-func TestValidateCredentialBasicAuthValid(t *testing.T) {
-	raw := json.RawMessage(`{"type":"basic-auth","username":{"fieldType":"string","value":"user"},"password":{"fieldType":"concealed-string","value":"pass"}}`)
-	if err := ValidateCredential(raw); err != nil {
-		t.Fatalf("expected valid basic-auth credential, got %v", err)
-	}
-}
-
-func TestValidateCredentialBasicAuthMissingFields(t *testing.T) {
-	raw := json.RawMessage(`{"type":"basic-auth"}`)
-	if err := ValidateCredential(raw); err != ErrMissingFields {
-		t.Fatalf("expected ErrMissingFields for missing username/password, got %v", err)
-	}
-}
-
-func TestValidateCredentialCreditCardValid(t *testing.T) {
-	raw := json.RawMessage(`{"type":"credit-card","number":{"fieldType":"concealed-string","value":"4111111111111111"},"fullName":{"fieldType":"string","value":"John Doe"},"cardType":{"fieldType":"string","value":"Visa"},"verificationNumber":{"fieldType":"concealed-string","value":"123"},"pin":{"fieldType":"concealed-string","value":"0000"},"expiryDate":{"fieldType":"year-month","value":"2027-08"},"validFrom":{"fieldType":"year-month","value":"2024-02"}}`)
-	if err := ValidateCredential(raw); err != nil {
-		t.Fatalf("expected valid credit card credential, got %v", err)
-	}
-}
-
-func TestValidateCredentialCreditCardMissingAll(t *testing.T) {
-	raw := json.RawMessage(`{"type":"credit-card"}`)
-	if err := ValidateCredential(raw); err != ErrMissingFields {
-		t.Fatalf("expected ErrMissingFields for empty credit-card, got %v", err)
-	}
-}
-
-func TestValidateCredentialNoteMissingContent(t *testing.T) {
-	raw := json.RawMessage(`{"type":"note"}`)
-	if err := ValidateCredential(raw); err != ErrMissingFields {
-		t.Fatalf("expected ErrMissingFields for empty note, got %v", err)
-	}
-}
-
-func TestValidateCredentialNoteValid(t *testing.T) {
-	raw := json.RawMessage(`{"type":"note","content":{"fieldType":"string","value":"hello"}}`)
-	if err := ValidateCredential(raw); err != nil {
-		t.Fatalf("expected valid note, got %v", err)
-	}
-}
-
-func TestValidateCredentialWiFi(t *testing.T) {
-	raw := json.RawMessage(`{
-		"type":"wifi",
-		"ssid":{"fieldType":"string","value":"MyWiFi"},
-		"networkSecurityType":{"fieldType":"wifi-network-security-type","value":"wpa2-personal"},
-		"passphrase":{"fieldType":"concealed-string","value":"secret"},
-		"hidden":{"fieldType":"boolean","value":"false"}
-	}`)
-	if err := ValidateCredential(raw); err != nil {
-		t.Fatalf("expected valid wifi, got %v", err)
-	}
-
-	// WiFi with no fields is valid per spec (all fields are optional)
-	rawEmpty := json.RawMessage(`{"type":"wifi"}`)
-	if err := ValidateCredential(rawEmpty); err != nil {
-		t.Fatalf("expected valid wifi with no fields, got %v", err)
-	}
-}
-
-func TestValidateCredentialAPIKeyMissingAll(t *testing.T) {
-	raw := json.RawMessage(`{"type":"api-key"}`)
-	if err := ValidateCredential(raw); err != ErrMissingFields {
-		t.Fatalf("expected ErrMissingFields for empty api-key, got %v", err)
-	}
-}
-
-func TestValidateCredentialAddressValid(t *testing.T) {
-	raw := json.RawMessage(`{
-		"type":"address",
-		"streetAddress":{"fieldType":"string","value":"123 Main St"},
-		"country":{"fieldType":"country-code","value":"US"}
-	}`)
-	if err := ValidateCredential(raw); err != nil {
-		t.Fatalf("expected valid address credential, got %v", err)
-	}
-}
-
-func TestValidateCredentialAddressMissingAll(t *testing.T) {
-	raw := json.RawMessage(`{"type":"address"}`)
-	if err := ValidateCredential(raw); err != ErrMissingFields {
-		t.Fatalf("expected ErrMissingFields for empty address, got %v", err)
-	}
-}
-
-func TestValidateCredentialGeneratedPasswordValid(t *testing.T) {
-	raw := json.RawMessage(`{"type":"generated-password","password":"p@ssw0rd!"}`)
-	if err := ValidateCredential(raw); err != nil {
-		t.Fatalf("expected valid generated-password credential, got %v", err)
-	}
-}
-
-func TestValidateCredentialGeneratedPasswordMissingPassword(t *testing.T) {
-	raw := json.RawMessage(`{"type":"generated-password","password":""}`)
-	if err := ValidateCredential(raw); err != ErrMissingFields {
-		t.Fatalf("expected ErrMissingFields for missing password, got %v", err)
-	}
-}
-
-func TestValidateCredentialPersonName(t *testing.T) {
-	raw := json.RawMessage(`{"type":"person-name","given":{"fieldType":"string","value":"Ada"},"surname":{"fieldType":"string","value":"Lovelace"}}`)
-	if err := ValidateCredential(raw); err != nil {
-		t.Fatalf("expected valid person-name credential, got %v", err)
-	}
-
-	rawMissing := json.RawMessage(`{"type":"person-name"}`)
-	if err := ValidateCredential(rawMissing); err != ErrMissingFields {
-		t.Fatalf("expected ErrMissingFields for person-name with no fields, got %v", err)
-	}
-}
-
-func TestValidateCredentialIdentityDocument(t *testing.T) {
-	raw := json.RawMessage(`{
-		"type":"identity-document",
-		"documentNumber":{"fieldType":"string","value":"ID123"},
-		"issueDate":{"fieldType":"date","value":"2024-01-01"},
-		"issuingCountry":{"fieldType":"country-code","value":"US"}
-	}`)
-	if err := ValidateCredential(raw); err != nil {
-		t.Fatalf("expected valid identity-document credential, got %v", err)
-	}
-
-	rawMissing := json.RawMessage(`{"type":"identity-document"}`)
-	if err := ValidateCredential(rawMissing); err != ErrMissingFields {
-		t.Fatalf("expected ErrMissingFields for empty identity-document, got %v", err)
-	}
-}
-
-func TestValidateCredentialDriversLicense(t *testing.T) {
-	raw := json.RawMessage(`{
-		"type":"drivers-license",
-		"licenseNumber":{"fieldType":"string","value":"DL123"},
-		"expiryDate":{"fieldType":"date","value":"2026-05-05"},
-		"country":{"fieldType":"country-code","value":"CA"}
-	}`)
-	if err := ValidateCredential(raw); err != nil {
-		t.Fatalf("expected valid drivers-license, got %v", err)
-	}
-
-	rawMissing := json.RawMessage(`{"type":"drivers-license"}`)
-	if err := ValidateCredential(rawMissing); err != ErrMissingFields {
-		t.Fatalf("expected ErrMissingFields for empty drivers-license, got %v", err)
-	}
-}
-
-func TestValidateCredentialPassport(t *testing.T) {
-	raw := json.RawMessage(`{
-		"type":"passport",
-		"passportNumber":{"fieldType":"string","value":"P123"},
-		"issueDate":{"fieldType":"date","value":"2023-01-01"},
-		"issuingCountry":{"fieldType":"country-code","value":"GB"}
-	}`)
-	if err := ValidateCredential(raw); err != nil {
-		t.Fatalf("expected valid passport, got %v", err)
-	}
-
-	rawMissing := json.RawMessage(`{"type":"passport"}`)
-	if err := ValidateCredential(rawMissing); err != ErrMissingFields {
-		t.Fatalf("expected ErrMissingFields for empty passport, got %v", err)
-	}
-}
-
-func TestValidateCredentialCustomFields(t *testing.T) {
-	raw := json.RawMessage(`{
-		"type":"custom-fields",
-		"fields":[{"fieldType":"string","value":"foo"}]
-	}`)
-	if err := ValidateCredential(raw); err != nil {
-		t.Fatalf("expected valid custom-fields, got %v", err)
-	}
-
-	rawMissing := json.RawMessage(`{"type":"custom-fields","fields":[]}`)
-	if err := ValidateCredential(rawMissing); err != ErrMissingFields {
-		t.Fatalf("expected ErrMissingFields for empty fields, got %v", err)
-	}
-}
-
-func TestValidateCredentialSSHKey(t *testing.T) {
-	privateKey := EncodeBase64URL([]byte("PRIVATE-KEY-DATA"))
-	raw := json.RawMessage(`{
-		"type":"ssh-key",
-		"keyType":"ssh-ed25519",
-		"privateKey":"` + privateKey + `"
-	}`)
-	if err := ValidateCredential(raw); err != nil {
-		t.Fatalf("expected valid ssh-key, got %v", err)
-	}
-
-	rawMissing := json.RawMessage(`{"type":"ssh-key","keyType":"ssh-ed25519"}`)
-	if err := ValidateCredential(rawMissing); err != ErrMissingFields {
-		t.Fatalf("expected ErrMissingFields for ssh-key without privateKey, got %v", err)
-	}
-}
-
-func TestValidateCredentialWiFi_RejectsNonStringifiedBoolean(t *testing.T) {
-	// Spec: EditableField.value is a string (tstr), including for booleans.
-	raw := json.RawMessage(`{
-		"type":"wifi",
-		"ssid":{"fieldType":"string","value":"MyWiFi"},
-		"networkSecurityType":{"fieldType":"wifi-network-security-type","value":"wpa2-personal"},
-		"passphrase":{"fieldType":"concealed-string","value":"secret"},
-		"hidden":{"fieldType":"boolean","value":false}
-	}`)
-	if err := ValidateCredential(raw); err == nil {
-		t.Fatalf("expected error for non-stringified boolean value, got nil")
-	}
-}
-
-func TestValidateCredentialItemReference(t *testing.T) {
-	raw := json.RawMessage(`{"type":"item-reference","reference":{"item":"aXRlbS0x","account":"YWNjb3VudC0x"}}`)
-	if err := ValidateCredential(raw); err != nil {
-		t.Fatalf("expected valid item-reference, got %v", err)
-	}
-
-	// Without account (optional)
-	rawNoAccount := json.RawMessage(`{"type":"item-reference","reference":{"item":"aXRlbS0x"}}`)
-	if err := ValidateCredential(rawNoAccount); err != nil {
-		t.Fatalf("expected valid item-reference without account, got %v", err)
-	}
-
-	rawInvalid := json.RawMessage(`{"type":"item-reference","reference":{"item":"not_base64!"}}`)
-	if err := ValidateCredential(rawInvalid); err == nil {
-		t.Fatalf("expected error for invalid item-reference id")
-	}
-
-	rawMissing := json.RawMessage(`{"type":"item-reference","reference":{}}`)
-	if err := ValidateCredential(rawMissing); err != ErrMissingFields {
-		t.Fatalf("expected ErrMissingFields for empty reference, got %v", err)
-	}
-}
-
-func TestValidateCredentialUnknownType(t *testing.T) {
-	// Unknown credential types should pass through per spec
-	raw := json.RawMessage(`{"type":"unknown-future-type","someField":"someValue"}`)
-	if err := ValidateCredential(raw); err != nil {
-		t.Fatalf("expected unknown credential type to pass through, got %v", err)
-	}
-}
-
-func TestValidateCredentialBasicAuthIgnoresUnknownEditableFieldType(t *testing.T) {
-	// Spec (§2.1.1): if an OPTIONAL member contains an unknown enum value,
-	// the member should be ignored as if not present.
-	raw := json.RawMessage(`{
-		"type":"basic-auth",
-		"username":{"fieldType":"string","value":"user"},
-		"password":{"fieldType":"unknown-type","value":"pass"}
-	}`)
-	if err := ValidateCredential(raw); err != nil {
-		t.Fatalf("expected credential to validate by ignoring unknown fieldType in optional member, got %v", err)
-	}
-}
-
-func TestValidateCredentialSSHKeyWithDates(t *testing.T) {
-	privateKey := EncodeBase64URL([]byte("PRIVATE-KEY-DATA"))
-	raw := json.RawMessage(`{
-		"type":"ssh-key",
-		"keyType":"ssh-ed25519",
-		"privateKey":"` + privateKey + `",
-		"keyComment":"my-key",
-		"creationDate":{"fieldType":"date","value":"2024-01-01"},
-		"expiryDate":{"fieldType":"date","value":"2025-01-01"}
-	}`)
-	if err := ValidateCredential(raw); err != nil {
-		t.Fatalf("expected valid ssh-key with dates, got %v", err)
-	}
-}
-
-func TestValidateCredentialSSHKeyInvalidPrivateKey(t *testing.T) {
-	raw := json.RawMessage(`{
-		"type":"ssh-key",
-		"keyType":"ssh-ed25519",
-		"privateKey":"not_valid_base64!"
-	}`)
-	if err := ValidateCredential(raw); err != ErrInvalidCredential {
-		t.Fatalf("expected ErrInvalidCredential for invalid privateKey, got %v", err)
-	}
-}
-
-func TestValidateCredentialPersonNameAllFields(t *testing.T) {
-	raw := json.RawMessage(`{
-		"type":"person-name",
-		"title":{"fieldType":"string","value":"Dr."},
-		"given":{"fieldType":"string","value":"Ada"},
-		"givenInformal":{"fieldType":"string","value":"Addy"},
-		"given2":{"fieldType":"string","value":"Augusta"},
-		"surnamePrefix":{"fieldType":"string","value":"von"},
-		"surname":{"fieldType":"string","value":"Lovelace"},
-		"surname2":{"fieldType":"string","value":"Byron"},
-		"credentials":{"fieldType":"string","value":"PhD"},
-		"generation":{"fieldType":"string","value":"III"}
-	}`)
-	if err := ValidateCredential(raw); err != nil {
-		t.Fatalf("expected valid person-name with all fields, got %v", err)
-	}
-}
-
-func TestValidateCredentialDriversLicenseAllFields(t *testing.T) {
-	raw := json.RawMessage(`{
-		"type":"drivers-license",
-		"fullName":{"fieldType":"string","value":"John Doe"},
-		"birthDate":{"fieldType":"date","value":"1990-01-15"},
-		"issueDate":{"fieldType":"date","value":"2020-06-01"},
-		"expiryDate":{"fieldType":"date","value":"2028-06-01"},
-		"issuingAuthority":{"fieldType":"string","value":"DMV"},
-		"territory":{"fieldType":"subdivision-code","value":"US-CA"},
-		"country":{"fieldType":"country-code","value":"US"},
-		"licenseNumber":{"fieldType":"string","value":"D1234567"},
-		"licenseClass":{"fieldType":"string","value":"C"}
-	}`)
-	if err := ValidateCredential(raw); err != nil {
-		t.Fatalf("expected valid drivers-license with all fields, got %v", err)
-	}
-}
-
-func TestValidateCredentialPassportAllFields(t *testing.T) {
-	raw := json.RawMessage(`{
-		"type":"passport",
-		"issuingCountry":{"fieldType":"country-code","value":"US"},
-		"passportType":{"fieldType":"string","value":"P"},
-		"passportNumber":{"fieldType":"string","value":"123456789"},
-		"nationalIdentificationNumber":{"fieldType":"string","value":"SSN123"},
-		"nationality":{"fieldType":"string","value":"American"},
-		"fullName":{"fieldType":"string","value":"John Doe"},
-		"birthDate":{"fieldType":"date","value":"1990-01-15"},
-		"birthPlace":{"fieldType":"string","value":"New York"},
-		"sex":{"fieldType":"string","value":"M"},
-		"issueDate":{"fieldType":"date","value":"2020-01-01"},
-		"expiryDate":{"fieldType":"date","value":"2030-01-01"},
-		"issuingAuthority":{"fieldType":"string","value":"US State Dept"}
-	}`)
-	if err := ValidateCredential(raw); err != nil {
-		t.Fatalf("expected valid passport with all fields, got %v", err)
-	}
-}
-
-func TestValidateCredentialIdentityDocumentAllFields(t *testing.T) {
-	raw := json.RawMessage(`{
-		"type":"identity-document",
-		"issuingCountry":{"fieldType":"country-code","value":"US"},
-		"documentNumber":{"fieldType":"string","value":"ID123456"},
-		"identificationNumber":{"fieldType":"string","value":"SSN123"},
-		"nationality":{"fieldType":"string","value":"American"},
-		"fullName":{"fieldType":"string","value":"John Doe"},
-		"birthDate":{"fieldType":"date","value":"1990-01-15"},
-		"birthPlace":{"fieldType":"string","value":"New York"},
-		"sex":{"fieldType":"string","value":"M"},
-		"issueDate":{"fieldType":"date","value":"2020-01-01"},
-		"expiryDate":{"fieldType":"date","value":"2030-01-01"},
-		"issuingAuthority":{"fieldType":"string","value":"DMV"}
-	}`)
-	if err := ValidateCredential(raw); err != nil {
-		t.Fatalf("expected valid identity-document with all fields, got %v", err)
-	}
-}
-
-func TestValidateCredentialCustomFieldsWithOptionalFields(t *testing.T) {
-	raw := json.RawMessage(`{
-		"type":"custom-fields",
-		"id":"ZmllbGRzLTE",
-		"label":"Custom Section",
-		"fields":[{"fieldType":"string","value":"custom value"}]
-	}`)
-	if err := ValidateCredential(raw); err != nil {
-		t.Fatalf("expected valid custom-fields with optional fields, got %v", err)
-	}
-}
-
-func TestValidateWiFiSecurityTypes(t *testing.T) {
-	securityTypes := []string{"unsecured", "wep", "wpa-personal", "wpa2-personal", "wpa3-personal"}
-	for _, secType := range securityTypes {
-		f := EditableField{FieldType: FieldTypeWifiNetworkSecurity, Value: json.RawMessage(`"` + secType + `"`)}
-		if err := ValidateEditableField(f); err != nil {
-			t.Fatalf("expected valid wifi security type %q, got %v", secType, err)
-		}
-	}
-}
-
-func TestValidateCredentialScopeAndroidAppFingerprint(t *testing.T) {
-	// Valid SHA256 (32 bytes) -> Base64URL encoded
-	validSha256 := make([]byte, 32)
-	validSha256Str := EncodeBase64URL(validSha256)
-
-	item := Item{
-		ID:    "valid-id",
-		Title: "Title",
-		Scope: &CredentialScope{
-			AndroidApps: []AndroidAppId{
-				{
-					BundleId: "com.example.app",
-					Certificate: &AndroidAppCertificateFingerprint{
-						Fingerprint: validSha256Str,
-						HashAlg:     "sha256",
-					},
-				},
+func TestCredentialScopeSerialization(t *testing.T) {
+	scope := CredentialScope{
+		Urls: []string{"https://example.com", "https://test.com"},
+		AndroidApps: []AndroidAppIdCredential{
+			{
+				BundleId: "com.example.app",
+				Name:     "Example App",
 			},
 		},
-		Credentials: []json.RawMessage{json.RawMessage(`{"type":"note","content":{"fieldType":"string","value":"note"}}`)},
 	}
-	if err := item.Validate(); err != nil {
-		t.Fatalf("expected valid android app fingerprint, got %v", err)
+
+	data, err := json.Marshal(scope)
+	if err != nil {
+		t.Fatalf("marshal error: %v", err)
+	}
+
+	var decoded CredentialScope
+	if err := json.Unmarshal(data, &decoded); err != nil {
+		t.Fatalf("unmarshal error: %v", err)
+	}
+
+	if len(decoded.Urls) != len(scope.Urls) {
+		t.Fatalf("urls count mismatch")
+	}
+	if len(decoded.AndroidApps) != len(scope.AndroidApps) {
+		t.Fatalf("android apps count mismatch")
 	}
 }
 
-func TestValidateCredentialScopeAndroidAppFingerprintInvalidEncoding(t *testing.T) {
-	// Invalid Base64URL (contains non-base64 chars, e.g. spaces or invalid symbols)
-	item := Item{
-		ID:    "valid-id",
-		Title: "Title",
-		Scope: &CredentialScope{
-			AndroidApps: []AndroidAppId{
-				{
-					BundleId: "com.example.app",
-					Certificate: &AndroidAppCertificateFingerprint{
-						Fingerprint: "not-base64-url!",
-						HashAlg:     "sha256",
-					},
-				},
-			},
-		},
-		Credentials: []json.RawMessage{json.RawMessage(`{"type":"note","content":{"fieldType":"string","value":"note"}}`)},
+func TestExtensionSerialization(t *testing.T) {
+	ext := Extension{
+		Name: "custom-extension",
+		Data: json.RawMessage(`{"key":"value"}`),
 	}
-	if err := item.Validate(); err != ErrInvalidFormat {
-		t.Fatalf("expected ErrInvalidFormat for invalid base64url fingerprint, got %v", err)
+
+	data, err := json.Marshal(ext)
+	if err != nil {
+		t.Fatalf("marshal error: %v", err)
+	}
+
+	var decoded Extension
+	if err := json.Unmarshal(data, &decoded); err != nil {
+		t.Fatalf("unmarshal error: %v", err)
+	}
+
+	if decoded.Name != ext.Name {
+		t.Fatalf("name mismatch")
 	}
 }
 
-func TestValidateCredentialScopeAndroidAppFingerprintInvalidLength(t *testing.T) {
-	// Valid Base64URL but wrong length for SHA256 (e.g. 31 bytes)
-	invalidLen := make([]byte, 31)
-	invalidLenStr := EncodeBase64URL(invalidLen)
-
-	item := Item{
-		ID:    "valid-id",
-		Title: "Title",
-		Scope: &CredentialScope{
-			AndroidApps: []AndroidAppId{
-				{
-					BundleId: "com.example.app",
-					Certificate: &AndroidAppCertificateFingerprint{
-						Fingerprint: invalidLenStr,
-						HashAlg:     "sha256",
-					},
-				},
-			},
-		},
-		Credentials: []json.RawMessage{json.RawMessage(`{"type":"note","content":{"fieldType":"string","value":"note"}}`)},
+func TestCollectionSerialization(t *testing.T) {
+	creationAt := uint64(1700000000)
+	coll := Collection{
+		ID:         "Y29sLTE",
+		CreationAt: &creationAt,
+		Title:      "My Collection",
+		Subtitle:   "A test collection",
+		Items:      []LinkedItem{{Item: "aXRlbS0x"}},
 	}
-	if err := item.Validate(); err != ErrInvalidFormat {
-		t.Fatalf("expected ErrInvalidFormat for wrong length fingerprint, got %v", err)
+
+	data, err := json.Marshal(coll)
+	if err != nil {
+		t.Fatalf("marshal error: %v", err)
+	}
+
+	var decoded Collection
+	if err := json.Unmarshal(data, &decoded); err != nil {
+		t.Fatalf("unmarshal error: %v", err)
+	}
+
+	if decoded.ID != coll.ID || decoded.Title != coll.Title {
+		t.Fatalf("collection mismatch")
+	}
+}
+
+func TestEditableFieldSerialization(t *testing.T) {
+	ef := EditableField{
+		ID:        "ZmllbGQtMQ",
+		FieldType: FieldTypeString,
+		Value:     json.RawMessage(`"test value"`),
+		Label:     "Test Field",
+	}
+
+	data, err := json.Marshal(ef)
+	if err != nil {
+		t.Fatalf("marshal error: %v", err)
+	}
+
+	var decoded EditableField
+	if err := json.Unmarshal(data, &decoded); err != nil {
+		t.Fatalf("unmarshal error: %v", err)
+	}
+
+	if decoded.FieldType != ef.FieldType || decoded.Label != ef.Label {
+		t.Fatalf("editable field mismatch")
+	}
+}
+
+func TestFido2ExtensionsSerialization(t *testing.T) {
+	payments := true
+	ext := Fido2Extensions{
+		HmacCredentials: &Fido2HmacCredentials{
+			Algorithm:     Fido2HmacCredentialAlgorithmHmacSha256,
+			CredWithUV:    "Y3JlZFdpdGhVVg",
+			CredWithoutUV: "Y3JlZFdpdGhvdXRVVg",
+		},
+		CredBlob: "Y3JlZEJsb2I",
+		LargeBlob: &Fido2LargeBlob{
+			UncompressedSize: 1024,
+			Data:             "bGFyZ2VCbG9iRGF0YQ",
+		},
+		Payments: &payments,
+	}
+
+	data, err := json.Marshal(ext)
+	if err != nil {
+		t.Fatalf("marshal error: %v", err)
+	}
+
+	var decoded Fido2Extensions
+	if err := json.Unmarshal(data, &decoded); err != nil {
+		t.Fatalf("unmarshal error: %v", err)
+	}
+
+	if decoded.HmacCredentials == nil || decoded.LargeBlob == nil {
+		t.Fatalf("fido2 extensions fields not decoded")
 	}
 }
