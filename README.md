@@ -6,7 +6,7 @@ Go types for the FIDO Alliance Credential Exchange Format (CXF) v1.0.
 
 ## Overview
 
-A minimal, pure schema library providing Go structs and constants for the [CXF v1.0 specification](https://fidoalliance.org/specs/cx/cxf-v1.0-rd-20250313.html). This library focuses solely on type definitions with JSON struct tags - no validation, no helper methods, no external dependencies.
+A minimal schema library providing Go structs and constants for the [CXF v1.0 specification](https://fidoalliance.org/specs/cx/cxf-v1.0-rd-20250313.html). The package is primarily type definitions with JSON struct tags and constants; it intentionally does not perform validation.
 
 Inspired by the [Rust reference implementation](https://github.com/bitwarden/credential-exchange/tree/main/credential-exchange-format).
 
@@ -62,13 +62,16 @@ func main() {
 
 ## Core Types
 
-- `Header` (alias `Container`): Top-level CXF structure with version, exporter info, timestamp, and accounts.
-- `Account`: User account with id, username, email, collections, and items.
-- `Item`: Credential container with id, title, credentials, and optional scope/tags/favorite.
-- `Collection`: Organizational grouping of items.
+- `Header` (and alias `Container`): Top-level CXF structure with version, exporter info, timestamp, and accounts.
+- `Account`: User account with id, username, email, collections, items, and optional extensions.
+- `Item`: Credential container with id, title, credentials (as raw JSON), and optional scope/tags/favorite/extensions.
+- `Collection`: Organizational grouping of items (with nested sub-collections).
+- `LinkedItem`: Reference to an item, optionally in another account.
 - `CredentialScope`: URLs and Android app IDs where credentials apply.
 - `EditableField`: Typed, user-editable field with `fieldType` and JSON `value`.
 - `Extension`: Named extension with arbitrary JSON data.
+- Sharing extension model:
+  - `SharedExtension`, `SharingAccessor`, `SharingAccessorType`, `SharingAccessorPermission`
 
 ## Credential Types
 
@@ -111,12 +114,12 @@ Constants for `EditableField.FieldType`:
 
 ## Design Philosophy
 
-This library intentionally provides **only types and constants**:
+This library intentionally focuses on schema representation:
 
+- **Primarily types and constants** - The core is Go structs with JSON tags and string constants.
 - **No validation** - Validation is application-specific. Use your own validation logic.
-- **No helper methods** - Use `json.Marshal`/`json.Unmarshal` directly.
-- **No encoding utilities** - Use `encoding/base64` and `encoding/base32` from stdlib.
-- **No external dependencies** - Pure Go standard library only.
+- **JSON-first** - Use `encoding/json` (`json.Marshal`/`json.Unmarshal`) directly.
+- **Raw JSON for forward compatibility** - Some fields are `json.RawMessage` (e.g., `Item.Credentials`, `EditableField.Value`, `Extension.Data`), so consumers must treat them as untrusted input and validate before use.
 
 ## References
 
