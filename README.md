@@ -2,7 +2,7 @@
 
 Go types for the FIDO Alliance Credential Exchange Format (CXF) v1.0.
 
-[![CI](https://github.com/nvinuesa/go-cxf/actions/workflows/ci.yml/badge.svg)](https://github.com/nvinuesa/go-cxf/actions/workflows/ci.yml)
+[![Test](https://github.com/nvinuesa/go-cxf/actions/workflows/test.yml/badge.svg)](https://github.com/nvinuesa/go-cxf/actions/workflows/test.yml)
 
 ## Overview
 
