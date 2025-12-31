@@ -5,35 +5,6 @@ import (
 	"testing"
 )
 
-func minimalTOTP() json.RawMessage {
-	return json.RawMessage(`{"type":"totp","secret":"JBSWY3DPEHPK3PXP","algorithm":"sha1","period":30,"digits":6}`)
-}
-
-func makeMinimalHeader() *Header {
-	cred := minimalTOTP()
-	item := Item{
-		ID:          "aXRlbS0x", // base64url("item-1")
-		Title:       "Test Item",
-		Credentials: []json.RawMessage{cred},
-	}
-	account := Account{
-		ID:       "YWNjb3VudC0x", // base64url("account-1")
-		Username: "user",
-		Email:    "user@example.com",
-		Items:    []Item{item},
-	}
-	return &Header{
-		Version: Version{
-			Major: VersionMajor,
-			Minor: VersionMinor,
-		},
-		ExporterRpId:        "exporter.example.com",
-		ExporterDisplayName: "Exporter",
-		Timestamp:           1710000000,
-		Accounts:            []Account{account},
-	}
-}
-
 func TestCredentialTypeConstants(t *testing.T) {
 	// Verify credential type constants match expected kebab-case values
 	tests := map[string]string{

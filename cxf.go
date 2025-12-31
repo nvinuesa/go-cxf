@@ -1,3 +1,8 @@
+// Package cxf provides Go types for the Credential Exchange Format (CXF),
+// an open standard for securely exchanging credentials between password
+// managers and other applications. It defines structures for accounts,
+// collections, items, and various credential types including passwords,
+// passkeys, TOTP, SSH keys, credit cards, and more.
 package cxf
 
 import (
